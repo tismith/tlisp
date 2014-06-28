@@ -29,7 +29,9 @@ data LispVal = Atom String
 parseString :: Parser LispVal
 parseString = do
     char '"'
-    x <- many (noneOf "\"")
+    x <- many (noneOf "\"" <|> do
+        char '\\'
+        oneOf "\"nrt\\")
     char '"'
     return $ String x
 
@@ -44,7 +46,14 @@ parseAtom = do
         otherwise -> Atom atom
 
 parseNumber :: Parser LispVal
-parseNumber = liftM (Number . read) $ many1 digit
+-- original
+--parseNumber = liftM (Number . read) $ many1 digit
+-- 2.1a
+parseNumber = do
+    ds <- many1 digit
+    return $ (Number . read) ds
+-- 2.1b
+--parseNumber = (many1 digit) >>= (\ds -> return $ (Number . read) ds)
 
 parseExpr :: Parser LispVal
 parseExpr = parseAtom
