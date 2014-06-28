@@ -29,11 +29,12 @@ data LispVal = Atom String
 parseString :: Parser LispVal
 parseString = do
     char '"'
-    x <- many (noneOf "\"" <|> do
-        char '\\'
-        oneOf "\"nrt\\")
+    x <- many (many (noneOf "\"") <|> do
+        e <- char '\\'
+        s <- oneOf "\"nrt\\"
+        return $ [e,s])
     char '"'
-    return $ String x
+    return $ String $ join x
 
 parseAtom :: Parser LispVal
 parseAtom = do
