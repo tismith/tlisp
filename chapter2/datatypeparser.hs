@@ -4,6 +4,8 @@ import System.Environment
 import Text.ParserCombinators.Parsec hiding ( spaces )
 import Numeric
 import Data.Char
+import Data.Ratio
+import Data.Complex
 
 main :: IO ()
 main = do
@@ -16,7 +18,7 @@ symbol = oneOf "!$%&|*+-/:<=?>@^_~"
 readExpr :: String -> String
 readExpr input = case parse parseExpr "lisp" input of
     Left err -> "No match: " ++ show err
-    Right val -> "Found value"
+    Right _ -> "Found value"
 
 spaces :: Parser ()
 spaces = skipMany1 space
@@ -27,6 +29,10 @@ data LispVal = Atom String
         | Number Integer
         | String String
         | Bool Bool
+        | Char Char
+        | Float Float
+        | Complex (Complex Integer)
+        | Ratio (Ratio Integer)
         deriving (Show)
 
 parseString :: Parser LispVal
@@ -51,7 +57,7 @@ parseAtom = do
     return $ Atom $ first : rest
 
 parseBool :: Parser LispVal
-parseBool = do
+parseBool = try $ do
     char '#'
     x <- oneOf "tf"
     return $ case x of
@@ -68,32 +74,45 @@ parseBool = do
 -- 2.1b
 --parseNumber = (many1 digit) >>= (\ds -> return $ (Number . read) ds)
 
-parseNumber :: Parser LispVal
-parseNumber = parsePrefixNumber <|> parseDecimal
+parseUnsignedNumber :: Parser LispVal
+parseUnsignedNumber = parsePrefixNumber <|> parseDecimal
+
+parseSignedNumber :: Parser LispVal
+parseSignedNumber = do
+    signChar <- oneOf "+-"
+    let sign = case signChar of
+                '+' -> 1
+                '-' -> -1
+    ureal <- parseComplex <|> parseRatio <|> parseFloat <|> parsePrefixNumber <|> parseDecimal
+    return $ case ureal of
+                Ratio r -> Ratio (r * (fromIntegral sign))
+                Complex (r :+ i) -> Complex $ (sign * r) :+ i
+                Float f -> Float $ (fromIntegral sign) * f
+                Number n -> Number $ sign * n
 
 parsePrefixNumber :: Parser LispVal
 parsePrefixNumber = parseOctal
     <|> parseHexadecimal
     <|> parseBinary
     <|> (do
-        string "#d"
+        try $ string "#d"
         parseDecimal)
 
 parseOctal :: Parser LispVal
 parseOctal = do
-    string "#o"
+    try $ string "#o"
     os <- many1 octDigit
     return $ (Number . fst . head . readOct) os
 
 parseHexadecimal :: Parser LispVal
 parseHexadecimal = do
-    string "#x"
+    try $ string "#x"
     os <- many1 hexDigit
     return $ (Number . fst . head . readHex) os
 
 parseBinary :: Parser LispVal
 parseBinary = do
-    string "#b"
+    try $ string "#b"
     bs <- many1 (oneOf "01")
     return $ (Number . readBinary) bs
 
@@ -105,8 +124,53 @@ parseDecimal = do
     ds <- many1 digit
     return $ (Number . read) ds
 
+parseChar :: Parser LispVal
+parseChar = do
+    try $ string "#\\"
+    cs <- parseCharLiteral <|> anyChar
+    return $ Char cs
+
+parseCharLiteral :: Parser Char
+parseCharLiteral = try $ do
+    cs <- string "space" <|> string "newline"
+    case cs of
+        "space" -> return ' '
+        "newline" -> return '\n'
+
+parseFloat :: Parser LispVal
+parseFloat = try $ do
+    integer <- many1 digit
+    char '.'
+    fractional <- many1 digit
+    return $ (Float . fst . head . readFloat) (integer ++ "." ++ fractional)
+
+parseRatio :: Parser LispVal
+parseRatio = try $ do
+    numerator <- many1 digit
+    char '/'
+    denominator <- many1 digit
+    return $ Ratio $ (read numerator) % (read denominator)
+
+parseComplex :: Parser LispVal
+parseComplex = try $ do
+    real <- many1 digit
+    sign <- oneOf "+-"
+    complex <- many digit
+    char 'i'
+    let okComplex = case complex of
+                        [] -> "1"
+                        _ -> complex
+    return $ Complex $ (read real) :+ (read okComplex * case sign of
+                        '-' -> -1
+                        '+' -> 1)
+
 parseExpr :: Parser LispVal
-parseExpr = parseAtom
-    <|> parseString
-    <|> parseNumber
+parseExpr = parseString
+    <|> parseComplex
+    <|> parseRatio
+    <|> parseFloat
+    <|> parseSignedNumber
+    <|> parseUnsignedNumber
     <|> parseBool
+    <|> parseChar
+    <|> parseAtom
