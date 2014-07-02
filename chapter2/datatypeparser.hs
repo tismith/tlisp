@@ -6,6 +6,7 @@ import Numeric
 import Data.Char
 import Data.Ratio
 import Data.Complex
+import qualified Data.Vector as V
 
 main :: IO ()
 main = do
@@ -25,6 +26,7 @@ spaces = skipMany1 space
 
 data LispVal = Atom String
         | List [LispVal]
+        | Vector (V.Vector LispVal)
         | DottedList [LispVal] LispVal
         | Number Integer
         | String String
@@ -78,7 +80,7 @@ parseUnsignedNumber :: Parser LispVal
 parseUnsignedNumber = parsePrefixNumber <|> parseDecimal
 
 parseSignedNumber :: Parser LispVal
-parseSignedNumber = do
+parseSignedNumber = try $ do
     signChar <- oneOf "+-"
     let sign = case signChar of
                 '+' -> 1
@@ -164,6 +166,40 @@ parseComplex = try $ do
                         '-' -> -1
                         '+' -> 1)
 
+parseList :: Parser LispVal
+parseList = liftM List $ sepBy parseExpr spaces
+
+parseDottedList :: Parser LispVal
+parseDottedList = do
+    head <- endBy parseExpr spaces
+    tail <- char '.' >> spaces >> parseExpr
+    return $ DottedList head tail
+
+parseQuoted :: Parser LispVal
+parseQuoted = do
+    char '\''
+    x <- parseExpr
+    return $ List [Atom "quote", x]
+
+parseUnquoted :: Parser LispVal
+parseUnquoted = do
+    char ','
+    x <- parseExpr
+    return $ List [Atom "unquote", x]
+
+parseQuasiQuoted :: Parser LispVal
+parseQuasiQuoted = do
+    char '`'
+    x <- parseExpr
+    return $ List [Atom "quasiquote", x]
+
+parseVector :: Parser LispVal
+parseVector = try $ do
+    string "#("
+    x <- sepBy parseExpr spaces
+    string ")"
+    return $ Vector $ V.fromList x
+
 parseExpr :: Parser LispVal
 parseExpr = parseString
     <|> parseComplex
@@ -174,3 +210,12 @@ parseExpr = parseString
     <|> parseBool
     <|> parseChar
     <|> parseAtom
+    <|> parseQuoted
+    <|> parseQuasiQuoted
+    <|> parseUnquoted
+    <|> parseVector
+    <|> do
+            char '('
+            x <- (try parseList) <|> parseDottedList
+            char ')'
+            return x
