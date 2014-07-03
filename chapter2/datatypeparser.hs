@@ -250,7 +250,6 @@ parseVector = try $ do
     string ")"
     return $ Vector $ V.fromList x
 
-
 -- |
 -- >>> parse parseExpr "lisp" "hello"
 -- Right (Atom "hello")

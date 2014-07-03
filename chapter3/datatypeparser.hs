@@ -389,8 +389,12 @@ eval :: LispVal -> ThrowsError LispVal
 eval val@(String _) = return val
 eval val@(Number _) = return val
 eval val@(Bool _) = return val
+eval val@(Complex _) = return val
+eval val@(Ratio _) = return val
+eval val@(Float _) = return val
+eval val@(Char _) = return val
 eval (List [Atom "quote", val]) = return val
-eval (List [Atom "if", pred, conseq, alt]) = 
+eval (List [Atom "if", pred, conseq, alt]) =
     do result <- eval pred
        case result of
          Bool False -> eval alt
@@ -436,7 +440,7 @@ numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
 numericBinop op params = mapM unpackNum params >>= return . Number . foldl1 op
 
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
-boolBinop unpacker op args = if length args /= 2 
+boolBinop unpacker op args = if length args /= 2
                              then throwError $ NumArgs 2 args
                              else do left <- unpacker $ args !! 0
                                      right <- unpacker $ args !! 1
@@ -446,10 +450,10 @@ numBoolBinop = boolBinop unpackNum
 strBoolBinop = boolBinop unpackStr
 boolBoolBinop = boolBinop unpackBool
 
-unpackNum :: LispVal -> ThrowsError Integer
+unpackNum :: Num a => LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
-unpackNum (String n) = let parsed = reads n in 
-                          if null parsed 
+unpackNum (String n) = let parsed = reads n in
+                          if null parsed
                             then throwError $ TypeMismatch "number" $ String n
                             else return $ fst $ parsed !! 0
 unpackNum (List [n]) = unpackNum n
@@ -491,7 +495,7 @@ eqv [(Number arg1), (Number arg2)] = return $ Bool $ arg1 == arg2
 eqv [(String arg1), (String arg2)] = return $ Bool $ arg1 == arg2
 eqv [(Atom arg1), (Atom arg2)] = return $ Bool $ arg1 == arg2
 eqv [(DottedList xs x), (DottedList ys y)] = eqv [List $ xs ++ [x], List $ ys ++ [y]]
-eqv [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) && 
+eqv [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) &&
                                                     (and $ map eqvPair $ zip arg1 arg2)
     where eqvPair (x1, x2) = case eqv [x1, x2] of
                                Left err -> False
@@ -502,7 +506,7 @@ eqv badArgList = throwError $ NumArgs 2 badArgList
 data Unpacker = forall a. Eq a => AnyUnpacker (LispVal -> ThrowsError a)
 
 unpackEquals :: LispVal -> LispVal -> Unpacker -> ThrowsError Bool
-unpackEquals arg1 arg2 (AnyUnpacker unpacker) = 
+unpackEquals arg1 arg2 (AnyUnpacker unpacker) =
              do unpacked1 <- unpacker arg1
                 unpacked2 <- unpacker arg2
                 return $ unpacked1 == unpacked2
@@ -510,7 +514,7 @@ unpackEquals arg1 arg2 (AnyUnpacker unpacker) =
 
 equal :: [LispVal] -> ThrowsError LispVal
 equal [arg1, arg2] = do
-    primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2) 
+    primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2)
                       [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool]
     eqvEquals <- eqv [arg1, arg2]
     return $ Bool $ (primitiveEquals || let (Bool x) = eqvEquals in x)
@@ -529,7 +533,7 @@ showError :: LispError -> String
 showError (UnboundVar message varname) = message ++ ": " ++ varname
 showError (BadSpecialForm message form) = message ++ ": " ++ show form
 showError (NotFunction message func) = message ++ ": " ++ show func
-showError (NumArgs expected found) = "Expected " ++ show expected 
+showError (NumArgs expected found) = "Expected " ++ show expected
                                   ++ " args; found values " ++ unwordsList found
 showError (TypeMismatch expected found) = "Invalid type: expected " ++ expected
                                        ++ ", found " ++ show found
@@ -555,15 +559,15 @@ readPrompt :: String -> IO String
 readPrompt prompt = flushStr prompt >> getLine
 
 evalString :: String -> IO String
-evalString expr = return $ extractValue $ trapError (liftM show $ readExpr expr >>= eval) 
+evalString expr = return $ extractValue $ trapError (liftM show $ readExpr expr >>= eval)
 
 evalAndPrint :: String -> IO ()
 evalAndPrint expr =  evalString expr >>= putStrLn
 
 until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
-until_ pred prompt action = do 
+until_ pred prompt action = do
   result <- prompt
-  if pred result 
+  if pred result
      then return ()
      else action result >> until_ pred prompt action
 
