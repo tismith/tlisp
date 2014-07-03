@@ -1,4 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Main where
 import System.IO hiding (try)
@@ -417,6 +418,7 @@ eval val@(String _) = return val
 eval val@(Number _) = return val
 eval val@(Bool _) = return val
 eval val@(Complex _) = return val
+eval val@(ComplexFloat _) = return val
 eval val@(Ratio _) = return val
 eval val@(Float _) = return val
 eval val@(Char _) = return val
@@ -461,10 +463,22 @@ primitives = [("+", numericBinop (+)),
               ("eqv?", eqv),
               ("equal?", equal)]
 
-
-numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
+numericBinop :: (Num a, Num b, Num c) => (a -> b -> c) -> [LispVal] -> ThrowsError LispVal
 numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericBinop op params = mapM unpackNum params >>= return . Number . foldl1 op
+numericBinop op params = mapM unpackNum params >>= return . toLispVal . foldl1 op
+
+class Num a => NumToLispVal a where
+    toLispVal :: a -> LispVal
+instance NumToLispVal (Complex Integer) where
+    toLispVal = Complex
+instance NumToLispVal (Float) where
+    toLispVal = Float
+instance NumToLispVal (Integer) where
+    toLispVal = Number
+instance NumToLispVal (Ratio Integer) where
+    toLispVal = Ratio
+instance NumToLispVal (Complex Float) where
+    toLispVal = ComplexFloat
 
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBinop unpacker op args = if length args /= 2
@@ -477,12 +491,12 @@ numBoolBinop = boolBinop unpackNum
 strBoolBinop = boolBinop unpackStr
 boolBoolBinop = boolBinop unpackBool
 
-unpackNum :: LispVal -> ThrowsError Integer
+unpackNum :: Num a => LispVal -> ThrowsError a
 unpackNum (Number n) = return n
-unpackNum (String n) = let parsed = reads n in
-                          if null parsed
-                            then throwError $ TypeMismatch "number" $ String n
-                            else return $ fst $ parsed !! 0
+unpackNum (Float n) = return n
+unpackNum (Complex n) = return n
+unpackNum (ComplexFloat n) = return n
+unpackNum (Ratio n) = return n
 unpackNum (List [n]) = unpackNum n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
