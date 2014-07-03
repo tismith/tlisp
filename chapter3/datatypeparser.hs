@@ -1,5 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances #-}
+-- {-# LANGUAGE FlexibleInstances #-} -- instance Blah (Foo Bar)
 
 module Main where
 import System.IO hiding (try)
@@ -40,8 +40,7 @@ data LispVal = Atom String
         | Bool Bool
         | Char Char
         | Float Float
-        | Complex (Complex Integer)
-        | ComplexFloat (Complex Float)
+        | Complex (Complex Float)
         | Ratio (Ratio Integer)
 instance Show LispVal where show = showVal
 
@@ -61,10 +60,6 @@ showVal (Vector contents) =
     "#(" ++ (unwordsList . V.toList) contents ++ ")"
 showVal (Float contents) = show contents
 showVal (Complex (r :+ i))
-    | i > 0 = show r ++ "+" ++ show i ++ "i"
-    | i < 0 = show r ++ show i ++ "i"
-    | i == 0 = show r
-showVal (ComplexFloat (r :+ i))
     | i > 0 = show r ++ "+" ++ show i ++ "i"
     | i < 0 = show r ++ show i ++ "i"
     | i == 0 = show r
@@ -141,7 +136,7 @@ parseBool = try $ do
 -- Right -123
 --
 -- >>> parse parseSignedNumber "lisp" "-3+2i"
--- Right -3+2i
+-- Right -3.0+2.0i
 --
 -- >>> parse parseSignedNumber "lisp" "-3/2"
 -- Right -3/2
@@ -149,12 +144,12 @@ parseSignedNumber :: Parser LispVal
 parseSignedNumber = try $ do
     signChar <- oneOf "+-"
     let sign = case signChar of
-                '+' -> 1
+                '+' -> 1 :: Integer
                 '-' -> -1
-    ureal <- parseComplex <|> parseComplexFloat <|> parseRatio <|> parseFloat <|> parsePrefixNumber <|> parseDecimal
+    ureal <- parseComplex <|> parseRatio <|> parseFloat <|> parsePrefixNumber <|> parseDecimal
     return $ case ureal of
                 Ratio r -> Ratio (r * (fromIntegral sign))
-                Complex (r :+ i) -> Complex $ (sign * r) :+ i
+                Complex (r :+ i) -> Complex $ (fromIntegral sign * r) :+ i
                 Float f -> Float $ (fromIntegral sign) * f
                 Number n -> Number $ sign * n
 
@@ -244,10 +239,16 @@ parseRatio = try $ do
     return $ Ratio $ (read numerator) % (read denominator)
 
 -- |
--- >>> parse parseComplexFloat "lisp" "3.2+2i"
+-- >>> parse parseComplex "lisp" "3.2+2i"
 -- Right 3.2+2.0i
-parseComplexFloat :: Parser LispVal
-parseComplexFloat = try $ do
+--
+-- >>> parse parseComplex "lisp" "+2i"
+-- Right 0.0+2.0i
+--
+-- >>> parse parseComplex "lisp" "-2i"
+-- Right 0.0-2.0i
+parseComplex :: Parser LispVal
+parseComplex = try parseImaginary <|> (try $ do
     real <- many1 digit
     realFrac <- (char '.' >> many1 digit) <|> (return "0")
     sign <- oneOf "+-"
@@ -257,22 +258,24 @@ parseComplexFloat = try $ do
     let okComplex = case complex of
                         [] -> "1"
                         _ -> complex
-    return $ ComplexFloat $ ((fst . head . readFloat) (real ++ "." ++ realFrac) :+
+    return $ Complex $ ((fst . head . readFloat) (real ++ "." ++ realFrac) :+
                         ((fst . head . readFloat) (okComplex ++ "." ++ complexFrac)) * case sign of
                             '-' -> -1
-                            '+' -> 1)
-parseComplex :: Parser LispVal
-parseComplex = try $ do
-    real <- many1 digit
-    sign <- oneOf "+-"
-    complex <- many digit
+                            '+' -> 1))
+
+parseImaginary :: Parser LispVal
+parseImaginary = try $ do
+    sign <- (oneOf "+-" >>= \s -> return [s]) <|> return ""
+    complex <- many1 digit
+    complexFrac <- (char '.' >> many1 digit) <|> (return "0")
     char 'i'
     let okComplex = case complex of
                         [] -> "1"
                         _ -> complex
-    return $ Complex $ (read real) :+ (read okComplex * case sign of
-                        '-' -> -1
-                        '+' -> 1)
+    return $ Complex $ (0.0 :+ ((fst . head . readFloat) (okComplex ++ "." ++ complexFrac)) * case sign of
+                            [] -> 1
+                            ('-':_) -> -1
+                            ('+':_) -> 1)
 
 -- |
 -- >>> parse parseList "lisp" "1 2 3"
@@ -325,7 +328,7 @@ parseVector = try $ do
 -- Right #(1 2 3)
 --
 -- >>> parse parseExpr "lisp" "3+2i"
--- Right 3+2i
+-- Right 3.0+2.0i
 --
 -- >>> parse parseExpr "lisp" "3.2+2i"
 -- Right 3.2+2.0i
@@ -395,7 +398,6 @@ parseVector = try $ do
 parseExpr :: Parser LispVal
 parseExpr = parseString
     <|> parseComplex
-    <|> parseComplexFloat
     <|> parseRatio
     <|> parseFloat
     <|> parseSignedNumber
@@ -418,7 +420,6 @@ eval val@(String _) = return val
 eval val@(Number _) = return val
 eval val@(Bool _) = return val
 eval val@(Complex _) = return val
-eval val@(ComplexFloat _) = return val
 eval val@(Ratio _) = return val
 eval val@(Float _) = return val
 eval val@(Char _) = return val
@@ -437,7 +438,7 @@ apply func args = maybe (throwError $ NotFunction "Unrecognized primitive functi
                         (lookup func primitives)
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
-primitives = [("+", numericBinop (+)),
+primitives = [("+", numericAdd),
               ("-", numericBinop (-)),
               ("*", numericBinop (*)),
               ("/", numericBinop div),
@@ -463,22 +464,51 @@ primitives = [("+", numericBinop (+)),
               ("eqv?", eqv),
               ("equal?", equal)]
 
-numericBinop :: (Num a, Num b, Num c) => (a -> b -> c) -> [LispVal] -> ThrowsError LispVal
-numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericBinop op params = mapM unpackNum params >>= return . toLispVal . foldl1 op
+--urgh.... fixme
+numericAdd :: [LispVal] -> ThrowsError LispVal
+numericAdd singleVal@[_] = throwError $ NumArgs 2 singleVal
+numericAdd [(Number arg1), (Number arg2)] = return $ Number $ arg1 + arg2
+numericAdd [(Float arg1), (Float arg2)] = return $ Float $ arg1 + arg2
+numericAdd [(Float arg1), (Number arg2)] = return $ Float $ arg1 + (fromIntegral arg2)
+numericAdd [(Number arg1), (Float arg2)] = return $ Float $ (fromIntegral arg1) + arg2
+numericAdd [(Complex arg1), (Number arg2)] = return $ Complex $ arg1 + (fromIntegral arg2)
+numericAdd [(Number arg1), (Complex arg2)] = return $ Complex $ (fromIntegral arg1) + arg2
+numericAdd [(Complex arg1), (Float arg2)] = return $ Complex $ arg1 + (arg2 :+ 0)
+numericAdd [(Float arg1), (Complex arg2)] = return $ Complex $ (arg1 :+ 0) + arg2
+numericAdd [(Ratio arg1), (Ratio arg2)] = return $ Ratio $ arg1 + arg2
+numericAdd [(Number arg1), (Ratio arg2)] = return $ Ratio $ (arg1 % 1) + arg2
+numericAdd [(Ratio arg1), (Number arg2)] = return $ Ratio $ arg1 + (arg2 % 1)
+numericAdd [(Ratio arg1), (Float arg2)] = return $ Float $ (fromRational arg1) + arg2
+numericAdd [(Float arg1), (Ratio arg2)] = return $ Float $ arg1 + (fromRational arg2)
+numericAdd [(Ratio arg1), (Complex arg2)] = return $ Complex $ (fromRational arg1) + arg2
+numericAdd [(Complex arg1), (Ratio arg2)] = return $ Complex $ arg1 + (fromRational arg2)
+numericAdd (notNum:_) = throwError $ TypeMismatch "number" notNum
 
-class Num a => NumToLispVal a where
-    toLispVal :: a -> LispVal
-instance NumToLispVal (Complex Integer) where
-    toLispVal = Complex
-instance NumToLispVal (Float) where
-    toLispVal = Float
-instance NumToLispVal (Integer) where
-    toLispVal = Number
-instance NumToLispVal (Ratio Integer) where
-    toLispVal = Ratio
-instance NumToLispVal (Complex Float) where
-    toLispVal = ComplexFloat
+----------------------------------------------------
+-- numericBinopNew :: Num a => (a -> a -> a) -> [LispVal] -> ThrowsError LispVal
+-- numericBinopNew f singleVal@[_] = throwError $ NumArgs 2 singleVal
+-- numericBinOpNew f [(Number arg1), (Number arg2)] = return $ Number $ f arg1 arg2
+-- numericBinOpNew f [(Float arg1), (Float arg2)] = return $ Float $ f arg1 arg2
+-- numericBinOpNew f [(Float arg1), (Number arg2)] = return $ Float $ f arg1 arg2
+-- numericBinOpNew f [(Number arg1), (Float arg2)] = return $ Float $ f arg1 arg2
+-- numericBinOpNew f [(Complex arg1), (Number arg2)] = return $ Complex $ f arg1 arg2
+-- numericBinOpNew f [(Number arg1), (Complex arg2)] = return $ Complex $ f arg1 arg2
+-- numericBinOpNew f [(Complex arg1), (Float arg2)] = return $ Complex $ f arg1 arg2
+-- numericBinOpNew f [(Float arg1), (Complex arg2)] = return $ Complex $ f arg1 arg2
+-- numericBinOpNew f [(Ratio arg1), (Ratio arg2)] = return $ Ratio $ f arg1 arg2
+-- numericBinOpNew f [(Number arg1), (Ratio arg2)] = return $ Ratio $ f arg1 arg2
+-- numericBinOpNew f [(Ratio arg1), (Number arg2)] = return $ Ratio $ f arg1 arg2
+-- numericBinOpNew f [(Float arg1), (Ratio arg2)] = return $ Float $ f arg1 arg2
+-- numericBinOpNew f [(Ratio arg1), (Float arg2)] = return $ Float $ f (approxRational arg1) arg2
+-- numericBinOpNew f [(Float arg1), (Ratio arg2)] = return $ Float $ f arg1 (approxRational arg2)
+-- numericBinOpNew f [(Ratio arg1), (Complex arg2)] = return $ Complex $ f (approxRational arg1) arg2
+-- numericBinOpNew f [(Complex arg1), (Ratio arg2)] = return $ Complex $ f arg1 (approxRational arg2)
+-- numericBinOpNew _ (notNum:_) = throwError $ TypeMismatch "number" notNum
+---------------------------------------------------- 
+
+numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
+numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
+numericBinop op params = mapM unpackNum params >>= return . Number . foldl1 op
 
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBinop unpacker op args = if length args /= 2
@@ -491,12 +521,8 @@ numBoolBinop = boolBinop unpackNum
 strBoolBinop = boolBinop unpackStr
 boolBoolBinop = boolBinop unpackBool
 
-unpackNum :: Num a => LispVal -> ThrowsError a
+unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
-unpackNum (Float n) = return n
-unpackNum (Complex n) = return n
-unpackNum (ComplexFloat n) = return n
-unpackNum (Ratio n) = return n
 unpackNum (List [n]) = unpackNum n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
@@ -544,10 +570,10 @@ eqv [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) &&
 eqv [_, _] = return $ Bool False
 eqv badArgList = throwError $ NumArgs 2 badArgList
 
-data Unpacker = forall a. Eq a => AnyUnpacker (LispVal -> ThrowsError a)
+data EqUnpacker = forall a. Eq a => AnyEqUnpacker (LispVal -> ThrowsError a)
 
-unpackEquals :: LispVal -> LispVal -> Unpacker -> ThrowsError Bool
-unpackEquals arg1 arg2 (AnyUnpacker unpacker) =
+unpackEquals :: LispVal -> LispVal -> EqUnpacker -> ThrowsError Bool
+unpackEquals arg1 arg2 (AnyEqUnpacker unpacker) =
              do unpacked1 <- unpacker arg1
                 unpacked2 <- unpacker arg2
                 return $ unpacked1 == unpacked2
@@ -556,7 +582,7 @@ unpackEquals arg1 arg2 (AnyUnpacker unpacker) =
 equal :: [LispVal] -> ThrowsError LispVal
 equal [arg1, arg2] = do
     primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2)
-                      [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool]
+                      [AnyEqUnpacker unpackNum, AnyEqUnpacker unpackStr, AnyEqUnpacker unpackBool]
     eqvEquals <- eqv [arg1, arg2]
     return $ Bool $ (primitiveEquals || let (Bool x) = eqvEquals in x)
 equal badArgList = throwError $ NumArgs 2 badArgList
