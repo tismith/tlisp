@@ -44,20 +44,29 @@ parseString = do
         char '\\'
         s <- oneOf "nrt\"\\"
         case s of
-            '\"' -> return [s]
-            '\\' -> return [s]
+            '\"' -> return "\""
+            '\\' -> return "\\"
             't' -> return "\t"
             'n' -> return "\n"
             'r' -> return "\r")
     char '"'
     return $ String $ join x
 
+-- |
+-- >>> parse parseAtom "lisp" "hello"
+-- Right (Atom "hello")
 parseAtom :: Parser LispVal
 parseAtom = do
     first <- letter <|> symbol
     rest <- many (letter <|> digit <|> symbol)
     return $ Atom $ first : rest
 
+-- |
+-- >>> parse parseBool "lisp" "#t"
+-- Right (Bool True)
+--
+-- >>> parse parseBool "lisp" "#f"
+-- Right (Bool False)
 parseBool :: Parser LispVal
 parseBool = try $ do
     char '#'
@@ -66,19 +75,27 @@ parseBool = try $ do
         't' -> Bool True
         'f' -> Bool False
 
-{-
- - A number may be written in binary, octal, decimal, or hex- adecimal by the use of a radix prefix.
- - The radix prefixes are #b (binary), #o (octal), #d (decimal), and #x (hexadec- imal).
- - With no radix prefix, a number is assumed to be expressed in decimal.
- -}
--- original
---parseNumber = liftM (Number . read) $ many1 digit
--- 2.1b
---parseNumber = (many1 digit) >>= (\ds -> return $ (Number . read) ds)
-
-parseUnsignedNumber :: Parser LispVal
-parseUnsignedNumber = parsePrefixNumber <|> parseDecimal
-
+-- |
+-- >>> parse parseSignedNumber "lisp" "+#x123"
+-- Right (Number 291)
+--
+-- >>> parse parseSignedNumber "lisp" "+#o123"
+-- Right (Number 83)
+--
+-- >>> parse parseSignedNumber "lisp" "+#d123"
+-- Right (Number 123)
+--
+-- >>> parse parseSignedNumber "lisp" "-#b101"
+-- Right (Number (-5))
+--
+-- >>> parse parseSignedNumber "lisp" "-123"
+-- Right (Number (-123))
+--
+-- >>> parse parseSignedNumber "lisp" "-3+2i"
+-- Right (Complex ((-3) :+ 2))
+--
+-- >>> parse parseSignedNumber "lisp" "-3/2"
+-- Right (Ratio ((-3) % 2))
 parseSignedNumber :: Parser LispVal
 parseSignedNumber = try $ do
     signChar <- oneOf "+-"
@@ -91,6 +108,24 @@ parseSignedNumber = try $ do
                 Complex (r :+ i) -> Complex $ (sign * r) :+ i
                 Float f -> Float $ (fromIntegral sign) * f
                 Number n -> Number $ sign * n
+
+-- |
+-- >>> parse parseUnsignedNumber "lisp" "#x123"
+-- Right (Number 291)
+--
+-- >>> parse parseUnsignedNumber "lisp" "#o123"
+-- Right (Number 83)
+--
+-- >>> parse parseUnsignedNumber "lisp" "#d123"
+-- Right (Number 123)
+--
+-- >>> parse parseUnsignedNumber "lisp" "#b101"
+-- Right (Number 5)
+--
+-- >>> parse parseUnsignedNumber "lisp" "123"
+-- Right (Number 123)
+parseUnsignedNumber :: Parser LispVal
+parseUnsignedNumber = parsePrefixNumber <|> parseDecimal
 
 parsePrefixNumber :: Parser LispVal
 parsePrefixNumber = parseOctal
@@ -126,6 +161,12 @@ parseDecimal = do
     ds <- many1 digit
     return $ (Number . read) ds
 
+-- |
+-- >>> parse parseChar "list" "#\\c"
+-- Right (Char 'c')
+--
+-- >>> parse parseChar "lisp" "#\\space"
+-- Right (Char ' ')
 parseChar :: Parser LispVal
 parseChar = do
     try $ string "#\\"
@@ -166,9 +207,15 @@ parseComplex = try $ do
                         '-' -> -1
                         '+' -> 1)
 
+-- |
+-- >>> parse parseList "lisp" "1 2 3"
+-- Right (List [Number 1,Number 2,Number 3])
 parseList :: Parser LispVal
 parseList = liftM List $ sepBy parseExpr spaces
 
+-- |
+-- >>> parse parseDotted "lisp" "1 . 2"
+-- Right (DottedList [Number 1] (Number 2))
 parseDottedList :: Parser LispVal
 parseDottedList = do
     head <- endBy parseExpr spaces
@@ -193,6 +240,9 @@ parseQuasiQuoted = do
     x <- parseExpr
     return $ List [Atom "quasiquote", x]
 
+-- |
+-- >>> parse parseVector "lisp" "#(1 2 3)"
+-- Right (Vector (fromList [Number 1,Number 2,Number 3]))
 parseVector :: Parser LispVal
 parseVector = try $ do
     string "#("
@@ -200,6 +250,76 @@ parseVector = try $ do
     string ")"
     return $ Vector $ V.fromList x
 
+
+-- |
+-- >>> parse parseExpr "lisp" "hello"
+-- Right (Atom "hello")
+--
+-- >>> parse parseExpr "lisp" "#(1 2 3)"
+-- Right (Vector (fromList [Number 1,Number 2,Number 3]))
+--
+-- >>> parse parseExpr "lisp" "3+2i"
+-- Right (Complex (3 :+ 2))
+--
+-- >>> parse parseExpr "lisp" "3/2"
+-- Right (Ratio (3 % 2))
+--
+-- >>> parse parseExpr "lisp" "3.2"
+-- Right (Float 3.2)
+--
+-- >>> parse parseExpr "lisp" "-3.2"
+-- Right (Float (-3.2))
+--
+-- >>> parse parseExpr "lisp" "+#x123"
+-- Right (Number 291)
+--
+-- >>> parse parseExpr "lisp" "#x123"
+-- Right (Number 291)
+--
+-- >>> parse parseExpr "lisp" "+#o123"
+-- Right (Number 83)
+--
+-- >>> parse parseExpr "lisp" "+#d123"
+-- Right (Number 123)
+--
+-- >>> parse parseExpr "lisp" "123"
+-- Right (Number 123)
+--
+-- >>> parse parseExpr "lisp" "-#b101"
+-- Right (Number (-5))
+--
+-- >>> parse parseExpr "lisp" "#t"
+-- Right (Bool True)
+--
+-- >>> parse parseExpr "lisp" "#f"
+-- Right (Bool False)
+--
+-- >>> parse parseExpr "list" "#\\c"
+-- Right (Char 'c')
+--
+-- >>> parse parseExpr "lisp" "#\\space"
+-- Right (Char ' ')
+--
+-- >>> parse parseExpr "lisp" "atom"
+-- Right (Atom "atom")
+--
+-- >>> parse parseExpr "lisp" "'(a list)"
+-- Right (List [Atom "quote",List [Atom "a",Atom "list"]])
+--
+-- >>> parse parseExpr "lisp" "`(a list)"
+-- Right (List [Atom "quasiquote",List [Atom "a",Atom "list"]])
+--
+-- >>> parse parseExpr "lisp" "`(a ,(+ 1 2))"
+-- Right (List [Atom "quasiquote",List [Atom "a",List [Atom "unquote",List [Atom "+",Number 1,Number 2]]]])
+--
+-- >>> parse parseExpr "lisp" "#(1 2 3)"
+-- Right (Vector (fromList [Number 1,Number 2,Number 3]))
+--
+-- >>> parse parseExpr "lisp" "(1 2 3)"
+-- Right (List [Number 1,Number 2,Number 3])
+--
+-- >>> parse parseExpr "lisp" "(1 2 . 3)"
+-- Right (DottedList [Number 1,Number 2] (Number 3))
 parseExpr :: Parser LispVal
 parseExpr = parseString
     <|> parseComplex
