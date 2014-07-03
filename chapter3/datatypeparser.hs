@@ -84,7 +84,7 @@ unescapeString (x:xs)
 -- Right "he\nllo"
 parseString :: Parser LispVal
 parseString = do
-    char '"'
+    char '\"'
     x <- many (many1 (noneOf "\\\"") <|> do
         char '\\'
         s <- oneOf "nrt\"\\"
@@ -94,7 +94,7 @@ parseString = do
             't' -> return "\t"
             'n' -> return "\n"
             'r' -> return "\r")
-    char '"'
+    char '\"'
     return $ String $ join x
 
 -- |
