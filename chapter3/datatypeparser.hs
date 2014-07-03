@@ -40,6 +40,7 @@ data LispVal = Atom String
         | Char Char
         | Float Float
         | Complex (Complex Integer)
+        | ComplexFloat (Complex Float)
         | Ratio (Ratio Integer)
 instance Show LispVal where show = showVal
 
@@ -59,6 +60,10 @@ showVal (Vector contents) =
     "#(" ++ (unwordsList . V.toList) contents ++ ")"
 showVal (Float contents) = show contents
 showVal (Complex (r :+ i))
+    | i > 0 = show r ++ "+" ++ show i ++ "i"
+    | i < 0 = show r ++ show i ++ "i"
+    | i == 0 = show r
+showVal (ComplexFloat (r :+ i))
     | i > 0 = show r ++ "+" ++ show i ++ "i"
     | i < 0 = show r ++ show i ++ "i"
     | i == 0 = show r
@@ -145,7 +150,7 @@ parseSignedNumber = try $ do
     let sign = case signChar of
                 '+' -> 1
                 '-' -> -1
-    ureal <- parseComplex <|> parseRatio <|> parseFloat <|> parsePrefixNumber <|> parseDecimal
+    ureal <- parseComplex <|> parseComplexFloat <|> parseRatio <|> parseFloat <|> parsePrefixNumber <|> parseDecimal
     return $ case ureal of
                 Ratio r -> Ratio (r * (fromIntegral sign))
                 Complex (r :+ i) -> Complex $ (sign * r) :+ i
@@ -237,6 +242,24 @@ parseRatio = try $ do
     denominator <- many1 digit
     return $ Ratio $ (read numerator) % (read denominator)
 
+-- |
+-- >>> parse parseComplexFloat "lisp" "3.2+2i"
+-- Right 3.2+2.0i
+parseComplexFloat :: Parser LispVal
+parseComplexFloat = try $ do
+    real <- many1 digit
+    realFrac <- (char '.' >> many1 digit) <|> (return "0")
+    sign <- oneOf "+-"
+    complex <- many digit
+    complexFrac <- (char '.' >> many1 digit) <|> (return "0")
+    char 'i'
+    let okComplex = case complex of
+                        [] -> "1"
+                        _ -> complex
+    return $ ComplexFloat $ ((fst . head . readFloat) (real ++ "." ++ realFrac) :+
+                        ((fst . head . readFloat) (okComplex ++ "." ++ complexFrac)) * case sign of
+                            '-' -> -1
+                            '+' -> 1)
 parseComplex :: Parser LispVal
 parseComplex = try $ do
     real <- many1 digit
@@ -303,6 +326,9 @@ parseVector = try $ do
 -- >>> parse parseExpr "lisp" "3+2i"
 -- Right 3+2i
 --
+-- >>> parse parseExpr "lisp" "3.2+2i"
+-- Right 3.2+2.0i
+--
 -- >>> parse parseExpr "lisp" "3/2"
 -- Right 3/2
 --
@@ -368,6 +394,7 @@ parseVector = try $ do
 parseExpr :: Parser LispVal
 parseExpr = parseString
     <|> parseComplex
+    <|> parseComplexFloat
     <|> parseRatio
     <|> parseFloat
     <|> parseSignedNumber
@@ -450,7 +477,7 @@ numBoolBinop = boolBinop unpackNum
 strBoolBinop = boolBinop unpackStr
 boolBoolBinop = boolBinop unpackBool
 
-unpackNum :: Num a => LispVal -> ThrowsError Integer
+unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
 unpackNum (String n) = let parsed = reads n in
                           if null parsed
