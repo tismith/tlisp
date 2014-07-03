@@ -1,5 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
--- {-# LANGUAGE FlexibleInstances #-} -- instance Blah (Foo Bar)
+{-# LANGUAGE FlexibleInstances #-}
 
 module Main where
 import System.IO hiding (try)
@@ -11,6 +11,7 @@ import Numeric
 import Data.Char
 import Data.Ratio
 import Data.Complex
+import Data.Maybe
 import qualified Data.Vector as V
 
 main :: IO ()
@@ -438,7 +439,7 @@ apply func args = maybe (throwError $ NotFunction "Unrecognized primitive functi
                         (lookup func primitives)
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
-primitives = [("+", numericAdd),
+primitives = [("+", add),
               ("-", numericBinop (-)),
               ("*", numericBinop (*)),
               ("/", numericBinop div),
@@ -464,7 +465,7 @@ primitives = [("+", numericAdd),
               ("eqv?", eqv),
               ("equal?", equal)]
 
---urgh.... fixme
+--urgh.... fixme, ugly but handles promotion
 numericAdd :: [LispVal] -> ThrowsError LispVal
 numericAdd singleVal@[_] = throwError $ NumArgs 2 singleVal
 numericAdd [(Number arg1), (Number arg2)] = return $ Number $ arg1 + arg2
@@ -483,6 +484,45 @@ numericAdd [(Float arg1), (Ratio arg2)] = return $ Float $ arg1 + (fromRational 
 numericAdd [(Ratio arg1), (Complex arg2)] = return $ Complex $ (fromRational arg1) + arg2
 numericAdd [(Complex arg1), (Ratio arg2)] = return $ Complex $ arg1 + (fromRational arg2)
 numericAdd (notNum:_) = throwError $ TypeMismatch "number" notNum
+
+-- not sure I understand all this, but nicer, but doesn't yet handle promotion
+data NumUnpacker = forall a. (NumToLispVal a, Num a) => AnyNumUnpacker (LispVal -> ThrowsError a)
+
+-- this pattern is the problem - it only uses a single unpacker at a time
+unpackAdd :: LispVal -> LispVal -> NumUnpacker -> ThrowsError (Maybe LispVal)
+unpackAdd arg1 arg2 (AnyNumUnpacker unpacker) =
+             do unpacked1 <- unpacker arg1
+                unpacked2 <- unpacker arg2
+                return $ Just . toLispNum $ unpacked1 + unpacked2
+        `catchError` (const $ return Nothing)
+
+numUnpackers :: [NumUnpacker]
+numUnpackers = [AnyNumUnpacker unpackFloat, AnyNumUnpacker unpackComplex, AnyNumUnpacker unpackNum,
+                AnyNumUnpacker unpackRatio]
+
+firstJust :: [Maybe a] -> Maybe a
+firstJust = foldl (\x y -> case x of
+                    Just a -> Just a
+                    Nothing -> y) Nothing
+
+add :: [LispVal] -> ThrowsError LispVal
+add [arg1, arg2] = do
+    primitiveAdd <- liftM (firstJust) $ mapM (unpackAdd arg1 arg2) numUnpackers
+    case primitiveAdd of
+        Nothing -> throwError $ TypeMismatch "number" arg1
+        Just a -> return $ a
+add badArgList = throwError $ NumArgs 2 badArgList
+
+class Num a => NumToLispVal a where
+    toLispNum :: a -> LispVal
+instance NumToLispVal (Integer) where
+    toLispNum = Number
+instance NumToLispVal (Float) where
+    toLispNum = Float
+instance NumToLispVal (Complex Float) where
+    toLispNum = Complex
+instance NumToLispVal (Ratio Integer) where
+    toLispNum = Ratio
 
 ----------------------------------------------------
 -- numericBinopNew :: Num a => (a -> a -> a) -> [LispVal] -> ThrowsError LispVal
@@ -525,6 +565,21 @@ unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
 unpackNum (List [n]) = unpackNum n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
+
+unpackComplex :: LispVal -> ThrowsError (Complex Float)
+unpackComplex (Complex n) = return n
+unpackComplex (List [n]) = unpackComplex n
+unpackComplex notNum = throwError $ TypeMismatch "number" notNum
+
+unpackRatio :: LispVal -> ThrowsError (Ratio Integer)
+unpackRatio (Ratio n) = return n
+unpackRatio (List [n]) = unpackRatio n
+unpackRatio notNum = throwError $ TypeMismatch "number" notNum
+
+unpackFloat :: LispVal -> ThrowsError Float
+unpackFloat (Float n) = return n
+unpackFloat (List [n]) = unpackFloat n
+unpackFloat notNum = throwError $ TypeMismatch "number" notNum
 
 unpackStr :: LispVal -> ThrowsError String
 unpackStr (String s) = return s
