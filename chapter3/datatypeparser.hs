@@ -488,7 +488,6 @@ numericAdd (notNum:_) = throwError $ TypeMismatch "number" notNum
 -- not sure I understand all this, but nicer, but doesn't yet handle promotion
 data NumUnpacker = forall a. (NumToLispVal a, Num a) => AnyNumUnpacker (LispVal -> ThrowsError a)
 
--- this pattern is the problem - it only uses a single unpacker at a time
 unpackAdd :: LispVal -> LispVal -> NumUnpacker -> ThrowsError (Maybe LispVal)
 unpackAdd arg1 arg2 (AnyNumUnpacker unpacker) =
              do unpacked1 <- unpacker arg1
@@ -568,16 +567,22 @@ unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
 unpackComplex :: LispVal -> ThrowsError (Complex Float)
 unpackComplex (Complex n) = return n
+unpackComplex (Number n) = return ((fromIntegral n) :+ 0)
+unpackComplex (Float n) = return (n :+ 0)
+unpackComplex (Ratio n) = return ((fromRational n) :+ 0)
 unpackComplex (List [n]) = unpackComplex n
 unpackComplex notNum = throwError $ TypeMismatch "number" notNum
 
 unpackRatio :: LispVal -> ThrowsError (Ratio Integer)
 unpackRatio (Ratio n) = return n
+unpackRatio (Number n) = return (n % 1)
 unpackRatio (List [n]) = unpackRatio n
 unpackRatio notNum = throwError $ TypeMismatch "number" notNum
 
 unpackFloat :: LispVal -> ThrowsError Float
 unpackFloat (Float n) = return n
+unpackFloat (Ratio n) = return (fromRational n)
+unpackFloat (Number n) = return (fromIntegral n)
 unpackFloat (List [n]) = unpackFloat n
 unpackFloat notNum = throwError $ TypeMismatch "number" notNum
 
