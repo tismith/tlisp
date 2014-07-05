@@ -1,11 +1,12 @@
 module Main where
 import Parse
 import Eval
-import System.IO hiding (try)
+
+import System.IO (hFlush, stdout)
 import System.Environment (getArgs)
 import Text.ParserCombinators.Parsec (parse)
-import Control.Monad
-import Control.Monad.Error
+import Control.Monad (liftM)
+import Control.Monad.Error (throwError)
 
 main :: IO ()
 main = do args <- getArgs

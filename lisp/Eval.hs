@@ -4,16 +4,12 @@
 
 module Eval where
 import Parse
-import Text.ParserCombinators.Parsec
-import System.IO hiding (try)
-import Control.Monad
-import Control.Monad.Error
-import Numeric
-import Data.Char
-import Data.Ratio
-import Data.Complex
-import Data.Maybe
-import qualified Data.Vector as V
+
+import Text.ParserCombinators.Parsec (ParseError)
+import Control.Monad (liftM)
+import Control.Monad.Error (throwError, Error, noMsg, strMsg, catchError)
+import Data.Ratio (Ratio, (%))
+import Data.Complex (Complex((:+)))
 
 eval :: LispVal -> ThrowsError LispVal
 eval val@(String _) = return val

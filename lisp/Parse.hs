@@ -1,13 +1,29 @@
 module Parse where
-import Control.Monad
-import Control.Monad.Error
-import Text.ParserCombinators.Parsec hiding (spaces)
-import Numeric
-import Data.Char
-import Data.Ratio
-import Data.Complex
-import Data.Maybe
-import qualified Data.Vector as V
+import Control.Monad (liftM, join)
+import Text.ParserCombinators.Parsec (
+    char
+    , try
+    , (<|>)
+    , many
+    , many1
+    , string
+    , sepBy
+    , endBy
+    , Parser
+    , oneOf
+    , noneOf
+    , skipMany1
+    , space
+    , anyChar
+    , letter
+    , digit
+    , octDigit
+    , hexDigit)
+import Numeric (readOct, readHex, readFloat)
+import Data.Char (digitToInt)
+import Data.Ratio (Ratio, numerator, denominator, (%))
+import Data.Complex (Complex((:+)))
+import qualified Data.Vector as V (toList, fromList, Vector)
 
 symbol :: Parser Char
 symbol = oneOf "!$%&|*+-/:<=?>@^_~"
