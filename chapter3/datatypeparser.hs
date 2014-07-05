@@ -1,5 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Main where
 import System.IO hiding (try)
@@ -439,9 +440,9 @@ apply func args = maybe (throwError $ NotFunction "Unrecognized primitive functi
                         (lookup func primitives)
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
-primitives = [("+", add),
-              ("-", numericBinop (-)),
-              ("*", numericBinop (*)),
+primitives = [("+", numBinOp (+)),
+              ("-", numBinOp (-)),
+              ("*", numBinOp (*)),
               ("/", numericBinop div),
               ("mod", numericBinop mod),
               ("quotient", numericBinop quot),
@@ -465,85 +466,65 @@ primitives = [("+", add),
               ("eqv?", eqv),
               ("equal?", equal)]
 
---urgh.... fixme, ugly but handles promotion
-numericAdd :: [LispVal] -> ThrowsError LispVal
-numericAdd singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericAdd [(Number arg1), (Number arg2)] = return $ Number $ arg1 + arg2
-numericAdd [(Float arg1), (Float arg2)] = return $ Float $ arg1 + arg2
-numericAdd [(Float arg1), (Number arg2)] = return $ Float $ arg1 + (fromIntegral arg2)
-numericAdd [(Number arg1), (Float arg2)] = return $ Float $ (fromIntegral arg1) + arg2
-numericAdd [(Complex arg1), (Number arg2)] = return $ Complex $ arg1 + (fromIntegral arg2)
-numericAdd [(Number arg1), (Complex arg2)] = return $ Complex $ (fromIntegral arg1) + arg2
-numericAdd [(Complex arg1), (Float arg2)] = return $ Complex $ arg1 + (arg2 :+ 0)
-numericAdd [(Float arg1), (Complex arg2)] = return $ Complex $ (arg1 :+ 0) + arg2
-numericAdd [(Ratio arg1), (Ratio arg2)] = return $ Ratio $ arg1 + arg2
-numericAdd [(Number arg1), (Ratio arg2)] = return $ Ratio $ (arg1 % 1) + arg2
-numericAdd [(Ratio arg1), (Number arg2)] = return $ Ratio $ arg1 + (arg2 % 1)
-numericAdd [(Ratio arg1), (Float arg2)] = return $ Float $ (fromRational arg1) + arg2
-numericAdd [(Float arg1), (Ratio arg2)] = return $ Float $ arg1 + (fromRational arg2)
-numericAdd [(Ratio arg1), (Complex arg2)] = return $ Complex $ (fromRational arg1) + arg2
-numericAdd [(Complex arg1), (Ratio arg2)] = return $ Complex $ arg1 + (fromRational arg2)
-numericAdd (notNum:_) = throwError $ TypeMismatch "number" notNum
-
--- not sure I understand all this, but nicer, but doesn't yet handle promotion
-data NumUnpacker = forall a. (NumToLispVal a, Num a) => AnyNumUnpacker (LispVal -> ThrowsError a)
-
-unpackAdd :: LispVal -> LispVal -> NumUnpacker -> ThrowsError (Maybe LispVal)
-unpackAdd arg1 arg2 (AnyNumUnpacker unpacker) =
-             do unpacked1 <- unpacker arg1
-                unpacked2 <- unpacker arg2
-                return $ Just . toLispNum $ unpacked1 + unpacked2
-        `catchError` (const $ return Nothing)
-
-numUnpackers :: [NumUnpacker]
-numUnpackers = [AnyNumUnpacker unpackFloat, AnyNumUnpacker unpackComplex, AnyNumUnpacker unpackNum,
-                AnyNumUnpacker unpackRatio]
-
-firstJust :: [Maybe a] -> Maybe a
-firstJust = foldl (\x y -> case x of
-                    Just a -> Just a
-                    Nothing -> y) Nothing
-
-add :: [LispVal] -> ThrowsError LispVal
-add [arg1, arg2] = do
-    primitiveAdd <- liftM (firstJust) $ mapM (unpackAdd arg1 arg2) numUnpackers
-    case primitiveAdd of
-        Nothing -> throwError $ TypeMismatch "number" arg1
-        Just a -> return $ a
-add badArgList = throwError $ NumArgs 2 badArgList
-
+--Begin magic to handle type promotion around my numerical types
 class Num a => NumToLispVal a where
     toLispNum :: a -> LispVal
 instance NumToLispVal (Integer) where
     toLispNum = Number
 instance NumToLispVal (Float) where
     toLispNum = Float
+--needs flexible instances here to write an instances for Complex Float instead of just Complex a
 instance NumToLispVal (Complex Float) where
     toLispNum = Complex
 instance NumToLispVal (Ratio Integer) where
     toLispNum = Ratio
 
-----------------------------------------------------
--- numericBinopNew :: Num a => (a -> a -> a) -> [LispVal] -> ThrowsError LispVal
--- numericBinopNew f singleVal@[_] = throwError $ NumArgs 2 singleVal
--- numericBinOpNew f [(Number arg1), (Number arg2)] = return $ Number $ f arg1 arg2
--- numericBinOpNew f [(Float arg1), (Float arg2)] = return $ Float $ f arg1 arg2
--- numericBinOpNew f [(Float arg1), (Number arg2)] = return $ Float $ f arg1 arg2
--- numericBinOpNew f [(Number arg1), (Float arg2)] = return $ Float $ f arg1 arg2
--- numericBinOpNew f [(Complex arg1), (Number arg2)] = return $ Complex $ f arg1 arg2
--- numericBinOpNew f [(Number arg1), (Complex arg2)] = return $ Complex $ f arg1 arg2
--- numericBinOpNew f [(Complex arg1), (Float arg2)] = return $ Complex $ f arg1 arg2
--- numericBinOpNew f [(Float arg1), (Complex arg2)] = return $ Complex $ f arg1 arg2
--- numericBinOpNew f [(Ratio arg1), (Ratio arg2)] = return $ Ratio $ f arg1 arg2
--- numericBinOpNew f [(Number arg1), (Ratio arg2)] = return $ Ratio $ f arg1 arg2
--- numericBinOpNew f [(Ratio arg1), (Number arg2)] = return $ Ratio $ f arg1 arg2
--- numericBinOpNew f [(Float arg1), (Ratio arg2)] = return $ Float $ f arg1 arg2
--- numericBinOpNew f [(Ratio arg1), (Float arg2)] = return $ Float $ f (approxRational arg1) arg2
--- numericBinOpNew f [(Float arg1), (Ratio arg2)] = return $ Float $ f arg1 (approxRational arg2)
--- numericBinOpNew f [(Ratio arg1), (Complex arg2)] = return $ Complex $ f (approxRational arg1) arg2
--- numericBinOpNew f [(Complex arg1), (Ratio arg2)] = return $ Complex $ f arg1 (approxRational arg2)
--- numericBinOpNew _ (notNum:_) = throwError $ TypeMismatch "number" notNum
----------------------------------------------------- 
+--needs existential quantification for this forall
+data NumUnpacker = forall a. (NumToLispVal a, Num a) => AnyNumUnpacker (LispVal -> ThrowsError a)
+
+--needs rank2types for this forall
+unpackBinNumOp :: (forall a. Num a => a -> a -> a) -> LispVal -> LispVal -> NumUnpacker -> ThrowsError (Maybe LispVal)
+unpackBinNumOp f arg1 arg2 (AnyNumUnpacker unpacker) =
+             do unpacked1 <- unpacker arg1
+                unpacked2 <- unpacker arg2
+                return $ Just . toLispNum $ f unpacked1 unpacked2
+        `catchError` (const $ return Nothing)
+
+--this defines the type promotion order.
+numUnpackers :: [NumUnpacker]
+numUnpackers = [AnyNumUnpacker unpackNum, AnyNumUnpacker unpackRatio, AnyNumUnpacker unpackFloat,
+                AnyNumUnpacker unpackComplex]
+
+--we try to interpret each
+--argument using the unpack* function. Some types will ThrowError when they can't be cast
+--we catch that error in unpackBinNumOp and return Nothing in that case. We then pick
+--the first unpacker that works.
+--
+--needs to be a rank2type (the forall a. ...) since that first argument is not specialised
+--at the call site to numBinOp. i.e. if numBinOp was
+--      forall a. (a->a->a) -> [... (the default
+--then at the callsite to numBinOp ghc would pick a type for that argument, whereas, we need
+--unpackBinNumOp to do that for us.
+--
+--Can see this with ghci -- :type (+) returns
+--(+) :: Num a => a -> a -> a
+--which is actually:
+--forall a. Num a => a -> a -> a
+--so if we want to pass in the fully polymorphic (+), we need to take it's full type signature
+numBinOp :: (forall a. Num a => a -> a -> a) -> [LispVal] -> ThrowsError LispVal
+numBinOp f [arg1, arg2] = do
+    primitive <- liftM (firstJust) $ mapM (unpackBinNumOp f arg1 arg2) numUnpackers
+    case primitive of
+        Nothing -> throwError $ TypeMismatch "number" arg1
+        Just a -> return $ a
+numBinOp _ badArgList = throwError $ NumArgs 2 badArgList
+
+firstJust :: [Maybe a] -> Maybe a
+firstJust = foldr (\x y -> case x of
+                    Just a -> x
+                    Nothing -> y) Nothing
+
+--end magic section, but don't forget the varied unpack* routines below
 
 numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
 numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
