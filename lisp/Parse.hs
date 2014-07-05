@@ -25,6 +25,9 @@ import Data.Ratio (Ratio, numerator, denominator, (%))
 import Data.Complex (Complex((:+)))
 import qualified Data.Vector as V (toList, fromList, Vector)
 
+-- $setup
+-- >>> import Text.ParserCombinators.Parsec (parse)
+
 symbol :: Parser Char
 symbol = oneOf "!$%&|*+-/:<=?>@^_~"
 
