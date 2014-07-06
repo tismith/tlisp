@@ -251,7 +251,7 @@ parseRatio = try $ do
 -- >>> parse parseComplex "lisp" "-2i"
 -- Right 0.0-2.0i
 parseComplex :: Parser LispVal
-parseComplex = try parseImaginary <|> (try $ do
+parseComplex = parseImaginary <|> (try $ do
     real <- many1 digit
     realFrac <- (char '.' >> many1 digit) <|> (return "0")
     sign <- oneOf "+-"
