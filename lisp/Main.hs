@@ -5,8 +5,10 @@ import Eval
 import System.IO (hFlush, stdout)
 import System.Environment (getArgs)
 import Text.ParserCombinators.Parsec (parse)
-import Control.Monad (liftM)
+import Control.Monad (liftM, when)
 import Control.Monad.Error (throwError)
+import System.Console.Readline (readline, addHistory, setInhibitCompletion)
+import Data.Char (isSpace)
 
 main :: IO ()
 main = do args <- getArgs
@@ -38,4 +40,18 @@ until' pred prompt action = do
      else action result >> until' pred prompt action
 
 runRepl :: IO ()
-runRepl = until' (== "quit") (readPrompt "Lisp>>> ") evalAndPrint
+runRepl = do
+    setInhibitCompletion True
+    replLoop
+
+replLoop :: IO ()
+replLoop = do
+    maybeLine <- readline "tlisp>>> "
+    case maybeLine of
+        Nothing -> return ()
+        Just ":quit" -> return ()
+        Just line -> do
+            let trimmedLine = dropWhile (isSpace) line
+            when (not $ null trimmedLine) $ addHistory trimmedLine
+            evalAndPrint trimmedLine
+            replLoop
