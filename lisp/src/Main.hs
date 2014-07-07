@@ -7,7 +7,7 @@ import System.Environment (getArgs)
 import Text.ParserCombinators.Parsec (parse)
 import Control.Monad (liftM, when)
 import Control.Monad.Error (throwError)
-import System.Console.Readline (readline, addHistory, setInhibitCompletion)
+import System.Console.Editline.Readline (readline, addHistory, setInhibitCompletion)
 import Data.Char (isSpace)
 
 main :: IO ()
