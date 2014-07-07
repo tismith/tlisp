@@ -38,5 +38,10 @@ test-suite doctests
   ghc-options:   -threaded
   main-is:       test/Doctests.hs
   build-depends: base, doctest >= 0.8
+  if flag(libeditline)
+      build-depends:     editline
+      cpp-options:       "-DLIBEDITLINE"
+  else
+      build-depends:     readline
   default-language:  Haskell2010
 
