@@ -5,7 +5,7 @@ name:                tlisp
 version:             0.1.0.0
 synopsis:            Toby's lisp
 -- description:
-homepage:            https://github.com/tismith/ausbird2ebird
+homepage:            https://github.com/tismith/write-yourself-a-scheme
 license:             MIT
 license-file:        LICENSE
 author:              Toby Smith
