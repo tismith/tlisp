@@ -19,9 +19,19 @@ cabal-version:       >=1.10
 executable tlisp
   main-is:           Main.hs
   hs-source-dirs:    src
-  build-depends:     base, editline, mtl, parsec, vector
+  if flag(libeditline)
+      build-depends:     base, editline, mtl, parsec, vector
+      cpp-options:       "-DLIBEDITLINE"
+  else
+      build-depends:     base, readline, mtl, parsec, vector
+      cpp-options:       "-DLIBREADLINE"
   -- ghc-options:	     -Wall -Werror
   default-language:  Haskell2010
+
+flag libeditline
+  description:	     Enable libeditline over libreadline
+  default:	     False
+
 
 test-suite doctests
   type:          exitcode-stdio-1.0

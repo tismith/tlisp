@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Main where
 import Parse
 import Eval
@@ -7,7 +8,11 @@ import System.Environment (getArgs)
 import Text.ParserCombinators.Parsec (parse)
 import Control.Monad (liftM, when)
 import Control.Monad.Error (throwError)
+#ifdef LIBEDITLINE
 import System.Console.Editline.Readline (readline, addHistory, setInhibitCompletion)
+#else
+import System.Console.Readline (readline, addHistory, setInhibitCompletion)
+#endif
 import Data.Char (isSpace)
 
 main :: IO ()
