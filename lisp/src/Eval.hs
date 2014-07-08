@@ -6,7 +6,7 @@ module Eval where
 import Parse
 
 import Text.ParserCombinators.Parsec (ParseError)
-import Control.Monad (liftM, foldM)
+import Control.Monad (liftM, foldM, sequence)
 import Control.Monad.Error (throwError, Error, noMsg, strMsg, catchError)
 import Data.Ratio (Ratio, (%))
 import Data.Complex (Complex((:+)))
@@ -42,7 +42,7 @@ primitives = [("+", anyNumListOp (+)),
               ("mod", onlyNumListOp mod),
               ("quotient", onlyNumListOp quot),
               ("remainder", onlyNumListOp rem),
-              ("=", anyEqBoolListOp (==)), --FIXME these don't with more than 2 args yet
+              ("=", anyEqBoolListOp (==)),
               ("<", anyOrdBoolListOp (<)),
               (">", anyOrdBoolListOp (>)),
               ("/=", anyEqBoolListOp (/=)),
@@ -205,7 +205,10 @@ anyNumBinOp f (Ratio a) (Ratio b) = return $ Ratio (f a b)
 anyNumBinOp _ e _ = throwError $ TypeMismatch "number" e
 
 anyEqBoolListOp :: (forall a. Eq a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
-anyEqBoolListOp f (l:ls:[]) = anyEqBoolBinOp (f) l ls
+anyEqBoolListOp f ls@(_:_:_) = do
+                    sequencedLispBools <- sequence $ zipWith (anyEqBoolBinOp f) ls (drop 1 ls)
+                    sequencedBools <- sequence $ map (unpackBool) sequencedLispBools
+                    return $ Bool $ and sequencedBools
 anyEqBoolListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
 anyEqBoolBinOp :: (forall a. Eq a => a -> a -> Bool) -> LispVal -> LispVal -> ThrowsError LispVal
@@ -228,7 +231,10 @@ anyEqBoolBinOp f (Ratio a) (Ratio b) = return $ Bool (f a b)
 anyEqBoolBinOp _ e _ = throwError $ TypeMismatch "number" e
 
 anyOrdBoolListOp :: (forall a. Ord a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
-anyOrdBoolListOp f (l:ls:[]) = anyOrdBoolBinOp (f) l ls
+anyOrdBoolListOp f ls@(_:_:_) = do
+                    sequencedLispBools <- sequence $ zipWith (anyOrdBoolBinOp f) ls (drop 1 ls)
+                    sequencedBools <- sequence $ map (unpackBool) sequencedLispBools
+                    return $ Bool $ and sequencedBools
 anyOrdBoolListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
 anyOrdBoolBinOp :: (forall a. Ord a => a -> a -> Bool) -> LispVal -> LispVal -> ThrowsError LispVal
