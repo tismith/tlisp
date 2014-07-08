@@ -6,7 +6,7 @@ module Eval where
 import Parse
 
 import Text.ParserCombinators.Parsec (ParseError)
-import Control.Monad (liftM)
+import Control.Monad (liftM, foldM)
 import Control.Monad.Error (throwError, Error, noMsg, strMsg, catchError)
 import Data.Ratio (Ratio, (%))
 import Data.Complex (Complex((:+)))
@@ -34,19 +34,19 @@ apply func args = maybe (throwError $ NotFunction "Unrecognized primitive functi
                         (lookup func primitives)
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
-primitives = [("+", numBinOp (+)),
-              ("-", numBinOp (-)),
-              ("*", numBinOp (*)),
-              ("/", numericBinop div),
-              ("mod", numericBinop mod),
-              ("quotient", numericBinop quot),
-              ("remainder", numericBinop rem),
-              ("=", numBoolBinop (==)),
-              ("<", numBoolBinop (<)),
-              (">", numBoolBinop (>)),
-              ("/=", numBoolBinop (/=)),
-              (">=", numBoolBinop (>=)),
-              ("<=", numBoolBinop (<=)),
+primitives = [("+", anyNumListOp (+)),
+              ("-", anyNumListOp (-)),
+              ("*", anyNumListOp (*)),
+              ("/", anyNumListDiv),
+              ("mod", onlyNumListOp mod),
+              ("quotient", onlyNumListOp quot),
+              ("remainder", onlyNumListOp rem),
+              ("=", anyEqBoolListOp (==)),
+              ("<", anyOrdBoolListOp (<)),
+              (">", anyOrdBoolListOp (>)),
+              ("/=", anyEqBoolListOp (/=)),
+              (">=", anyOrdBoolListOp (>=)),
+              ("<=", anyOrdBoolListOp (<=)),
               ("&&", boolBoolBinop (&&)),
               ("||", boolBoolBinop (||)),
               ("string=?", strBoolBinop (==)),
@@ -60,65 +60,99 @@ primitives = [("+", numBinOp (+)),
               ("eqv?", eqv),
               ("equal?", equal)]
 
---Begin magic to handle type promotion around my numerical types
-class Num a => NumToLispVal a where
-    toLispNum :: a -> LispVal
-instance NumToLispVal (Integer) where
-    toLispNum = Number
-instance NumToLispVal (Float) where
-    toLispNum = Float
---needs flexible instances here to write an instances for Complex Float instead of just Complex a
-instance NumToLispVal (Complex Float) where
-    toLispNum = Complex
-instance NumToLispVal (Ratio Integer) where
-    toLispNum = Ratio
+onlyNumListOp :: (forall a. Integral a => a -> a -> a) -> [LispVal] -> ThrowsError LispVal
+onlyNumListOp f (l:ls@(_:_)) = foldM (onlyNumBinOp f) l ls
+onlyNumListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
---needs existential quantification for this forall
-data NumUnpacker = forall a. (NumToLispVal a, Num a) => AnyNumUnpacker (LispVal -> ThrowsError a)
+onlyNumBinOp :: (forall a. Integral a => a -> a -> a) -> LispVal -> LispVal -> ThrowsError LispVal
+onlyNumBinOp f (Number a) (Number b) = return $ Number (f a b)
+onlyNumBinOp _ (Number _) e = throwError $ TypeMismatch "integral" e
+onlyNumBinOp _ e _ = throwError $ TypeMismatch "integral" e
 
---needs rank2types for this forall
-unpackBinNumOp :: (forall a. Num a => a -> a -> a) -> LispVal -> LispVal -> NumUnpacker -> ThrowsError (Maybe LispVal)
-unpackBinNumOp f arg1 arg2 (AnyNumUnpacker unpacker) =
-             do unpacked1 <- unpacker arg1
-                unpacked2 <- unpacker arg2
-                return $ Just . toLispNum $ f unpacked1 unpacked2
-        `catchError` (const $ return Nothing)
+anyNumListDiv :: [LispVal] -> ThrowsError LispVal
+anyNumListDiv (l:ls@(_:_)) = foldM (anyNumBinDiv) l ls
+anyNumListDiv badArgList = throwError $ NumArgs 2 badArgList
 
---this defines the type promotion order.
-numUnpackers :: [NumUnpacker]
-numUnpackers = [AnyNumUnpacker unpackNum, AnyNumUnpacker unpackRatio, AnyNumUnpacker unpackFloat,
-                AnyNumUnpacker unpackComplex]
+anyNumBinDiv :: LispVal -> LispVal -> ThrowsError LispVal
+anyNumBinDiv (Number a) (Number b) = return $ Number (div a b)
+anyNumBinDiv (Number a) (Float b) = return $ Float ((fromIntegral a) / b)
+anyNumBinDiv (Number a) (Complex b) = return $ Complex ((fromIntegral a :+ 0) / b)
+anyNumBinDiv (Number a) (Ratio b) = return $ Ratio ((a % 1) / b)
+anyNumBinDiv (Float a) (Number b) = return $ Float (a / (fromIntegral b))
+anyNumBinDiv (Float a) (Float b) = return $ Float (a / b)
+anyNumBinDiv (Float a) (Complex b) = return $ Complex ((a :+ 0) / b)
+anyNumBinDiv (Float a) (Ratio b) = return $ Float (a / (fromRational b))
+anyNumBinDiv (Complex a) (Number b) = return $ Complex (a / (fromIntegral b :+ 0))
+anyNumBinDiv (Complex a) (Float b) = return $ Complex (a / (b :+ 0))
+anyNumBinDiv (Complex a) (Complex b) = return $ Complex (a / b)
+anyNumBinDiv (Complex a) (Ratio b) = return $ Complex (a / (fromRational b :+ 0))
+anyNumBinDiv (Ratio a) (Number b) = return $ Ratio (a / (b % 1))
+anyNumBinDiv (Ratio a) (Float b) = return $ Float (fromRational a / b)
+anyNumBinDiv (Ratio a) (Complex b) = return $ Complex (fromRational a / b)
+anyNumBinDiv (Ratio a) (Ratio b) = return $ Ratio (a / b)
 
---we try to interpret each
---argument using the unpack* function. Some types will ThrowError when they can't be cast
---we catch that error in unpackBinNumOp and return Nothing in that case. We then pick
---the first unpacker that works.
---
---needs to be a rank2type (the forall a. ...) since that first argument is not specialised
---at the call site to numBinOp. i.e. if numBinOp was
---      forall a. (a->a->a) -> [... (the default
---then at the callsite to numBinOp ghc would pick a type for that argument, whereas, we need
---unpackBinNumOp to do that for us.
---
---Can see this with ghci -- :type (+) returns
---(+) :: Num a => a -> a -> a
---which is actually:
---forall a. Num a => a -> a -> a
---so if we want to pass in the fully polymorphic (+), we need to take it's full type signature
-numBinOp :: (forall a. Num a => a -> a -> a) -> [LispVal] -> ThrowsError LispVal
-numBinOp f [arg1, arg2] = do
-    primitive <- liftM (firstJust) $ mapM (unpackBinNumOp f arg1 arg2) numUnpackers
-    case primitive of
-        Nothing -> throwError $ TypeMismatch "number" arg1
-        Just a -> return $ a
-numBinOp _ badArgList = throwError $ NumArgs 2 badArgList
+anyNumListOp :: (forall a. Num a => a -> a -> a) -> [LispVal] -> ThrowsError LispVal
+anyNumListOp f (l:ls@(_:_)) = foldM (anyNumBinOp f) l ls
+anyNumListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
-firstJust :: [Maybe a] -> Maybe a
-firstJust = foldr (\x y -> case x of
-                    Just a -> x
-                    Nothing -> y) Nothing
+anyNumBinOp :: (forall a. Num a => a -> a -> a) -> LispVal -> LispVal -> ThrowsError LispVal
+anyNumBinOp f (Number a) (Number b) = return $ Number (f a b)
+anyNumBinOp f (Number a) (Float b) = return $ Float (f (fromIntegral a) b)
+anyNumBinOp f (Number a) (Complex b) = return $ Complex (f (fromIntegral a :+ 0) b)
+anyNumBinOp f (Number a) (Ratio b) = return $ Ratio (f (a % 1) b)
+anyNumBinOp f (Float a) (Number b) = return $ Float (f a (fromIntegral b))
+anyNumBinOp f (Float a) (Float b) = return $ Float (f a b)
+anyNumBinOp f (Float a) (Complex b) = return $ Complex (f (a :+ 0) b)
+anyNumBinOp f (Float a) (Ratio b) = return $ Float (f a (fromRational b))
+anyNumBinOp f (Complex a) (Number b) = return $ Complex (f a (fromIntegral b :+ 0))
+anyNumBinOp f (Complex a) (Float b) = return $ Complex (f a (b :+ 0))
+anyNumBinOp f (Complex a) (Complex b) = return $ Complex (f a b)
+anyNumBinOp f (Complex a) (Ratio b) = return $ Complex (f a (fromRational b :+ 0))
+anyNumBinOp f (Ratio a) (Number b) = return $ Ratio (f a (b % 1))
+anyNumBinOp f (Ratio a) (Float b) = return $ Float (f (fromRational a) b)
+anyNumBinOp f (Ratio a) (Complex b) = return $ Complex (f (fromRational a) b)
+anyNumBinOp f (Ratio a) (Ratio b) = return $ Ratio (f a b)
 
---end magic section, but don't forget the varied unpack* routines below
+anyEqBoolListOp :: (forall a. Eq a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+anyEqBoolListOp f (l:ls:[]) = anyEqBoolBinOp (f) l ls
+anyEqBoolListOp _ badArgList = throwError $ NumArgs 2 badArgList
+
+anyEqBoolBinOp :: (forall a. Eq a => a -> a -> Bool) -> LispVal -> LispVal -> ThrowsError LispVal
+anyEqBoolBinOp f (Number a) (Number b) = return $ Bool (f a b)
+anyEqBoolBinOp f (Number a) (Float b) = return $ Bool (f (fromIntegral a) b)
+anyEqBoolBinOp f (Number a) (Complex b) = return $ Bool (f (fromIntegral a :+ 0) b)
+anyEqBoolBinOp f (Number a) (Ratio b) = return $ Bool (f (a % 1) b)
+anyEqBoolBinOp f (Float a) (Number b) = return $ Bool (f a (fromIntegral b))
+anyEqBoolBinOp f (Float a) (Float b) = return $ Bool (f a b)
+anyEqBoolBinOp f (Float a) (Complex b) = return $ Bool (f (a :+ 0) b)
+anyEqBoolBinOp f (Float a) (Ratio b) = return $ Bool (f a (fromRational b))
+anyEqBoolBinOp f (Complex a) (Number b) = return $ Bool (f a (fromIntegral b :+ 0))
+anyEqBoolBinOp f (Complex a) (Float b) = return $ Bool (f a (b :+ 0))
+anyEqBoolBinOp f (Complex a) (Complex b) = return $ Bool (f a b)
+anyEqBoolBinOp f (Complex a) (Ratio b) = return $ Bool (f a (fromRational b :+ 0))
+anyEqBoolBinOp f (Ratio a) (Number b) = return $ Bool (f a (b % 1))
+anyEqBoolBinOp f (Ratio a) (Float b) = return $ Bool (f (fromRational a) b)
+anyEqBoolBinOp f (Ratio a) (Complex b) = return $ Bool (f (fromRational a) b)
+anyEqBoolBinOp f (Ratio a) (Ratio b) = return $ Bool (f a b)
+
+anyOrdBoolListOp :: (forall a. Ord a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+anyOrdBoolListOp f (l:ls:[]) = anyOrdBoolBinOp (f) l ls
+anyOrdBoolListOp _ badArgList = throwError $ NumArgs 2 badArgList
+
+anyOrdBoolBinOp :: (forall a. Ord a => a -> a -> Bool) -> LispVal -> LispVal -> ThrowsError LispVal
+anyOrdBoolBinOp f (Number a) (Number b) = return $ Bool (f a b)
+anyOrdBoolBinOp f (Number a) (Float b) = return $ Bool (f (fromIntegral a) b)
+anyOrdBoolBinOp f (Number a) e@(Complex _) = throwError $ TypeMismatch "ordered" e
+anyOrdBoolBinOp f (Number a) (Ratio b) = return $ Bool (f (a % 1) b)
+anyOrdBoolBinOp f (Float a) (Number b) = return $ Bool (f a (fromIntegral b))
+anyOrdBoolBinOp f (Float a) (Float b) = return $ Bool (f a b)
+anyOrdBoolBinOp f (Float a) e@(Complex _) = throwError $ TypeMismatch "ordered" e
+anyOrdBoolBinOp f (Float a) (Ratio b) = return $ Bool (f a (fromRational b))
+anyOrdBoolBinOp f e@(Complex _) _ = throwError $ TypeMismatch "ordered" e
+anyOrdBoolBinOp f (Ratio a) (Number b) = return $ Bool (f a (b % 1))
+anyOrdBoolBinOp f (Ratio a) (Float b) = return $ Bool (f (fromRational a) b)
+anyOrdBoolBinOp f (Ratio a) e@(Complex _) = throwError $ TypeMismatch "ordered" e
+anyOrdBoolBinOp f (Ratio a) (Ratio b) = return $ Bool (f a b)
 
 numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
 numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
