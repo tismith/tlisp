@@ -38,11 +38,19 @@ runRepl = do
     setInhibitCompletion True
     replLoop
 
+doQuit :: IO Bool
+doQuit = putStrLn "Leaving tlisp" >> return False
+
+doHelp :: IO Bool
+doHelp = putStrLn "Welcome to tlisp!\n\t:quit\t\tExits the repl\n\t:help\t\tThis message" >> return True
+
 handleCommand :: String -> IO Bool
 handleCommand s = case s of
-    "quit" -> return False
-    "q" -> return False
-    _ -> return True
+    "quit" -> doQuit
+    "q" -> doQuit
+    "help" -> doHelp
+    "h" -> doHelp
+    _ -> putStrLn ("Unknown command :" ++ s) >> return True
 
 replLoop :: IO ()
 replLoop = do
@@ -51,12 +59,17 @@ replLoop = do
         Nothing -> return ()
         Just line -> do
             let trimmedLine = dropWhile (isSpace) line
-            when (not $ null trimmedLine) $ addHistory trimmedLine
-            case trimmedLine of
-                (':':command) -> do
-                    continue <- handleCommand command
-                    if continue then
-                        replLoop
-                    else
-                        return ()
-                _ -> evalAndPrint trimmedLine >> replLoop
+            if (not $ null trimmedLine)
+            then do
+                addHistory trimmedLine
+                case trimmedLine of
+                    (':':command) -> do
+                        continue <- handleCommand command
+                        if continue then
+                            replLoop
+                        else
+                            return ()
+                    _ -> evalAndPrint trimmedLine >> replLoop
+            else
+                replLoop
+
