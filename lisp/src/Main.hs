@@ -38,15 +38,25 @@ runRepl = do
     setInhibitCompletion True
     replLoop
 
+handleCommand :: String -> IO Bool
+handleCommand s = case s of
+    "quit" -> return False
+    "q" -> return False
+    _ -> return True
+
 replLoop :: IO ()
 replLoop = do
     maybeLine <- readline "tlisp>>> "
     case maybeLine of
         Nothing -> return ()
-        Just ":quit" -> return ()
-        Just ":q" -> return ()
         Just line -> do
             let trimmedLine = dropWhile (isSpace) line
             when (not $ null trimmedLine) $ addHistory trimmedLine
-            evalAndPrint trimmedLine
-            replLoop
+            case trimmedLine of
+                (':':command) -> do
+                    continue <- handleCommand command
+                    if continue then
+                        replLoop
+                    else
+                        return ()
+                _ -> evalAndPrint trimmedLine >> replLoop
