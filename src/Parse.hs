@@ -319,16 +319,10 @@ parseQuasiQuoted = do
 parseVector :: Parser LispVal
 parseVector = try $ do
     string "#("
+    many (space)
     x <- sepEndBy parseExpr spaces
     string ")"
     return $ Vector $ V.fromList x
-
-    <|> do
-            char '('
-            many (space)
-            x <- (try parseList) <|> parseDottedList
-            char ')'
-            return x
 
 parseBracketedParser :: Parser LispVal -> Parser LispVal
 parseBracketedParser p = try $ do

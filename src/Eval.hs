@@ -26,7 +26,7 @@ eval (List [Atom "if", pred, conseq, alt]) =
          Bool False -> eval alt
          otherwise -> eval conseq
 eval (List (Atom func : args)) = mapM eval args >>= apply func
-eval (List (val:[])) = eval val
+--eval (List (val:[])) = eval val
 eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 apply :: String -> [LispVal] -> ThrowsError LispVal
