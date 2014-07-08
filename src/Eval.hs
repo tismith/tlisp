@@ -291,12 +291,16 @@ unpackFloat notNum = throwError $ TypeMismatch "number" notNum
 
 unpackStr :: LispVal -> ThrowsError String
 unpackStr (String s) = return s
-unpackStr (Number s) = return $ show s
-unpackStr (Complex s) = return $ show s
-unpackStr (Float s) = return $ show s
-unpackStr (Ratio s) = return $ show s
-unpackStr (Bool s) = return $ show s
 unpackStr notString = throwError $ TypeMismatch "string" notString
+
+unpackCoerceStr :: LispVal -> ThrowsError String
+unpackCoerceStr (String s) = return s
+unpackCoerceStr (Number s) = return $ show s
+unpackCoerceStr (Complex s) = return $ show s
+unpackCoerceStr (Float s) = return $ show s
+unpackCoerceStr (Ratio s) = return $ show s
+unpackCoerceStr b@(Bool _) = return $ show b
+unpackCoerceStr notString = throwError $ TypeMismatch "string" notString
 
 unpackBool :: LispVal -> ThrowsError Bool
 unpackBool (Bool b) = return b
@@ -357,7 +361,7 @@ equal [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) 
 equal [arg1, arg2] = do
     primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2)
                       [AnyEqUnpacker unpackNum, AnyEqUnpacker unpackRatio, AnyEqUnpacker unpackFloat,
-                        AnyEqUnpacker unpackComplex, AnyEqUnpacker unpackStr, AnyEqUnpacker unpackBool]
+                        AnyEqUnpacker unpackComplex, AnyEqUnpacker unpackCoerceStr, AnyEqUnpacker unpackBool]
     eqvEquals <- eqv [arg1, arg2]
     return $ Bool $ (primitiveEquals || let (Bool x) = eqvEquals in x)
 equal badArgList = throwError $ NumArgs 2 badArgList

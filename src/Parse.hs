@@ -7,7 +7,7 @@ import Text.ParserCombinators.Parsec (
     , many
     , many1
     , string
-    , sepBy
+    , sepEndBy
     , endBy
     , Parser
     , oneOf
@@ -284,7 +284,7 @@ parseImaginary = try $ do
 -- >>> parse parseList "lisp" "1 2 3"
 -- Right (1 2 3)
 parseList :: Parser LispVal
-parseList = liftM List $ sepBy parseExpr spaces
+parseList = liftM List $ sepEndBy parseExpr spaces
 
 -- |
 -- >>> parse parseDottedList "lisp" "1 . 2"
@@ -319,9 +319,24 @@ parseQuasiQuoted = do
 parseVector :: Parser LispVal
 parseVector = try $ do
     string "#("
-    x <- sepBy parseExpr spaces
+    x <- sepEndBy parseExpr spaces
     string ")"
     return $ Vector $ V.fromList x
+
+    <|> do
+            char '('
+            many (space)
+            x <- (try parseList) <|> parseDottedList
+            char ')'
+            return x
+
+parseBracketedParser :: Parser LispVal -> Parser LispVal
+parseBracketedParser p = try $ do
+    char '('
+    many (space)
+    x <- p
+    char ')'
+    return x
 
 -- |
 -- >>> parse parseExpr "lisp" "hello"
@@ -384,16 +399,16 @@ parseVector = try $ do
 -- >>> parse parseExpr "lisp" "`(a list)"
 -- Right (quasiquote (a list))
 --
--- >>> parse parseExpr "lisp" "`(a ,(+ 1 2))"
+-- >>> parse parseExpr "lisp" "`(a ,( + 1 2))"
 -- Right (quasiquote (a (unquote (+ 1 2))))
 --
--- >>> parse parseExpr "lisp" "#(1 2 3)"
+-- >>> parse parseExpr "lisp" "#(1 2 3 )"
 -- Right #(1 2 3)
 --
 -- >>> parse parseExpr "lisp" "(1 2 3)"
 -- Right (1 2 3)
 --
--- >>> parse parseExpr "lisp" "(1 2 . 3)"
+-- >>> parse parseExpr "lisp" "( 1 2 . 3)"
 -- Right (1 2 . 3)
 --
 -- >>> parse parseExpr "lisp" "\"he\\nllo\""
@@ -412,8 +427,5 @@ parseExpr = parseString
     <|> parseQuasiQuoted
     <|> parseUnquoted
     <|> parseVector
-    <|> do
-            char '('
-            x <- (try parseList) <|> parseDottedList
-            char ')'
-            return x
+    <|> parseBracketedParser (parseList)
+    <|> parseBracketedParser (parseDottedList)
