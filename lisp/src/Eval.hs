@@ -41,7 +41,7 @@ primitives = [("+", anyNumListOp (+)),
               ("mod", onlyNumListOp mod),
               ("quotient", onlyNumListOp quot),
               ("remainder", onlyNumListOp rem),
-              ("=", anyEqBoolListOp (==)),
+              ("=", anyEqBoolListOp (==)), --FIXME these don't with more than 2 args yet
               ("<", anyOrdBoolListOp (<)),
               (">", anyOrdBoolListOp (>)),
               ("/=", anyEqBoolListOp (/=)),
@@ -50,15 +50,103 @@ primitives = [("+", anyNumListOp (+)),
               ("&&", boolBoolBinop (&&)),
               ("||", boolBoolBinop (||)),
               ("string=?", strBoolBinop (==)),
-              ("string?", strBoolBinop (>)),
               ("string<=?", strBoolBinop (<=)),
               ("string>=?", strBoolBinop (>=)),
+              ("string<?", strBoolBinop (<)),
+              ("string>?", strBoolBinop (>)),
               ("car", car),
               ("cdr", cdr),
               ("cons", cons),
               ("eq?", eqv),
               ("eqv?", eqv),
-              ("equal?", equal)]
+              ("equal?", equal),
+              ("string?", isLispValTest (isLispValString)),
+              ("boolean?", isLispValTest (isLispValBool)),
+              ("number?", isLispValTest (isLispValNum)),
+              ("complex?", isLispValTest (isLispValComplex)),
+              ("real?", isLispValTest (isLispValReal)),
+              ("rational?", isLispValTest (isLispValRational)),
+              ("integer?", isLispValTest (isLispValInteger)),
+              ("vector?", isLispValTest (isLispValVector)),
+              ("char?", isLispValTest (isLispValChar)),
+              ("port?", undefined),
+              ("procedure?", undefined),
+              ("pair?", isLispValTest (isLispValDottedList)),
+              ("symbol?", isLispValTest (isLispValAtom)),
+              ("list?", isLispValTest (isLispValList)),
+              ("symbol->string", symbolToString),
+              ("string->symbol", stringToSymbol)]
+
+stringToSymbol :: [LispVal] -> ThrowsError LispVal
+stringToSymbol ((String s):[]) = return $ Atom s
+stringToSymbol (e:[]) = throwError $ TypeMismatch "string" e
+stringToSymbol e = throwError $ NumArgs 1 e
+
+symbolToString :: [LispVal] -> ThrowsError LispVal
+symbolToString ((Atom s):[]) = return $ String s
+symbolToString (e:[]) = throwError $ TypeMismatch "symbol" e
+symbolToString e = throwError $ NumArgs 1 e
+
+isLispValDottedList :: LispVal -> Bool
+isLispValDottedList (DottedList _ _) = True
+isLispValDottedList _ = False
+
+isLispValList :: LispVal -> Bool
+isLispValList (List _) = True
+isLispValList _ = False
+
+isLispValAtom :: LispVal -> Bool
+isLispValAtom (Atom _) = True
+isLispValAtom _ = False
+
+isLispValVector :: LispVal -> Bool
+isLispValVector (Vector _) = True
+isLispValVector _ = False
+
+isLispValChar :: LispVal -> Bool
+isLispValChar (Char _) = True
+isLispValChar _ = False
+
+isLispValInteger :: LispVal -> Bool
+isLispValInteger (Number _) = True
+isLispValInteger _ = False
+
+isLispValRational :: LispVal -> Bool
+isLispValRational (Number _) = True
+isLispValRational (Ratio _) = True
+isLispValRational _ = False
+
+isLispValReal :: LispVal -> Bool
+isLispValReal (Number _) = True
+isLispValReal (Float _) = True
+isLispValReal (Ratio _) = True
+isLispValReal _ = False
+
+isLispValComplex :: LispVal -> Bool
+isLispValComplex (Number _) = True
+isLispValComplex (Float _) = True
+isLispValComplex (Ratio _) = True
+isLispValComplex (Complex _) = True
+isLispValComplex _ = False
+
+isLispValNum :: LispVal -> Bool
+isLispValNum (Number _) = True
+isLispValNum (Float _) = True
+isLispValNum (Ratio _) = True
+isLispValNum (Complex _) = True
+isLispValNum _ = False
+
+isLispValBool :: LispVal -> Bool
+isLispValBool (Bool _) = True
+isLispValBool _ = False
+
+isLispValString :: LispVal -> Bool
+isLispValString (String _) = True
+isLispValString _ = False
+
+isLispValTest :: (LispVal -> Bool) -> [LispVal] -> ThrowsError LispVal
+isLispValTest f (l:[]) = return $ Bool $ f l
+isLispValTest _ e = throwError $ NumArgs 1 e
 
 onlyNumListOp :: (forall a. Integral a => a -> a -> a) -> [LispVal] -> ThrowsError LispVal
 onlyNumListOp f (l:ls@(_:_)) = foldM (onlyNumBinOp f) l ls
@@ -90,6 +178,7 @@ anyNumBinDiv (Ratio a) (Number b) = return $ Ratio (a / (b % 1))
 anyNumBinDiv (Ratio a) (Float b) = return $ Float (fromRational a / b)
 anyNumBinDiv (Ratio a) (Complex b) = return $ Complex (fromRational a / b)
 anyNumBinDiv (Ratio a) (Ratio b) = return $ Ratio (a / b)
+anyNumBinDiv e _ = throwError $ TypeMismatch "number" e
 
 anyNumListOp :: (forall a. Num a => a -> a -> a) -> [LispVal] -> ThrowsError LispVal
 anyNumListOp f (l:ls@(_:_)) = foldM (anyNumBinOp f) l ls
@@ -112,6 +201,7 @@ anyNumBinOp f (Ratio a) (Number b) = return $ Ratio (f a (b % 1))
 anyNumBinOp f (Ratio a) (Float b) = return $ Float (f (fromRational a) b)
 anyNumBinOp f (Ratio a) (Complex b) = return $ Complex (f (fromRational a) b)
 anyNumBinOp f (Ratio a) (Ratio b) = return $ Ratio (f a b)
+anyNumBinOp _ e _ = throwError $ TypeMismatch "number" e
 
 anyEqBoolListOp :: (forall a. Eq a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 anyEqBoolListOp f (l:ls:[]) = anyEqBoolBinOp (f) l ls
@@ -134,6 +224,7 @@ anyEqBoolBinOp f (Ratio a) (Number b) = return $ Bool (f a (b % 1))
 anyEqBoolBinOp f (Ratio a) (Float b) = return $ Bool (f (fromRational a) b)
 anyEqBoolBinOp f (Ratio a) (Complex b) = return $ Bool (f (fromRational a) b)
 anyEqBoolBinOp f (Ratio a) (Ratio b) = return $ Bool (f a b)
+anyEqBoolBinOp _ e _ = throwError $ TypeMismatch "number" e
 
 anyOrdBoolListOp :: (forall a. Ord a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 anyOrdBoolListOp f (l:ls:[]) = anyOrdBoolBinOp (f) l ls
@@ -153,10 +244,7 @@ anyOrdBoolBinOp f (Ratio a) (Number b) = return $ Bool (f a (b % 1))
 anyOrdBoolBinOp f (Ratio a) (Float b) = return $ Bool (f (fromRational a) b)
 anyOrdBoolBinOp f (Ratio a) e@(Complex _) = throwError $ TypeMismatch "ordered" e
 anyOrdBoolBinOp f (Ratio a) (Ratio b) = return $ Bool (f a b)
-
-numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
-numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericBinop op params = mapM unpackNum params >>= return . Number . foldl1 op
+anyOrdBoolBinOp _ e _ = throwError $ TypeMismatch "number" e
 
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBinop unpacker op args = if length args /= 2
@@ -165,7 +253,6 @@ boolBinop unpacker op args = if length args /= 2
                                      right <- unpacker $ args !! 1
                                      return $ Bool $ left `op` right
 
-numBoolBinop = boolBinop unpackNum
 strBoolBinop = boolBinop unpackStr
 boolBoolBinop = boolBinop unpackBool
 
@@ -228,6 +315,9 @@ cons badArgList = throwError $ NumArgs 2 badArgList
 eqv :: [LispVal] -> ThrowsError LispVal
 eqv [(Bool arg1), (Bool arg2)] = return $ Bool $ arg1 == arg2
 eqv [(Number arg1), (Number arg2)] = return $ Bool $ arg1 == arg2
+eqv [(Ratio arg1), (Ratio arg2)] = return $ Bool $ arg1 == arg2
+eqv [(Float arg1), (Float arg2)] = return $ Bool $ arg1 == arg2
+eqv [(Complex arg1), (Complex arg2)] = return $ Bool $ arg1 == arg2
 eqv [(String arg1), (String arg2)] = return $ Bool $ arg1 == arg2
 eqv [(Atom arg1), (Atom arg2)] = return $ Bool $ arg1 == arg2
 eqv [(DottedList xs x), (DottedList ys y)] = eqv [List $ xs ++ [x], List $ ys ++ [y]]
@@ -251,7 +341,8 @@ unpackEquals arg1 arg2 (AnyEqUnpacker unpacker) =
 equal :: [LispVal] -> ThrowsError LispVal
 equal [arg1, arg2] = do
     primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2)
-                      [AnyEqUnpacker unpackNum, AnyEqUnpacker unpackStr, AnyEqUnpacker unpackBool]
+                      [AnyEqUnpacker unpackNum, AnyEqUnpacker unpackRatio, AnyEqUnpacker unpackFloat,
+                        AnyEqUnpacker unpackComplex, AnyEqUnpacker unpackStr, AnyEqUnpacker unpackBool]
     eqvEquals <- eqv [arg1, arg2]
     return $ Bool $ (primitiveEquals || let (Bool x) = eqvEquals in x)
 equal badArgList = throwError $ NumArgs 2 badArgList
