@@ -44,6 +44,7 @@ replLoop = do
     case maybeLine of
         Nothing -> return ()
         Just ":quit" -> return ()
+        Just ":q" -> return ()
         Just line -> do
             let trimmedLine = dropWhile (isSpace) line
             when (not $ null trimmedLine) $ addHistory trimmedLine

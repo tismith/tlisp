@@ -26,6 +26,7 @@ eval (List [Atom "if", pred, conseq, alt]) =
          Bool False -> eval alt
          otherwise -> eval conseq
 eval (List (Atom func : args)) = mapM eval args >>= apply func
+eval (List (val:[])) = eval val
 eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 apply :: String -> [LispVal] -> ThrowsError LispVal
@@ -285,6 +286,9 @@ unpackFloat notNum = throwError $ TypeMismatch "number" notNum
 unpackStr :: LispVal -> ThrowsError String
 unpackStr (String s) = return s
 unpackStr (Number s) = return $ show s
+unpackStr (Complex s) = return $ show s
+unpackStr (Float s) = return $ show s
+unpackStr (Ratio s) = return $ show s
 unpackStr (Bool s) = return $ show s
 unpackStr notString = throwError $ TypeMismatch "string" notString
 
