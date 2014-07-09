@@ -6,8 +6,11 @@ import qualified Data.Vector as V (toList, Vector)
 import Text.ParserCombinators.Parsec (ParseError)
 import Control.Monad.Error (throwError, Error, noMsg, strMsg, catchError)
 import Data.IORef (IORef)
+import Control.Monad.Error (ErrorT)
+import System.IO (Handle)
 
 type Env = IORef [(String, IORef LispVal)]
+type IOThrowsError = ErrorT LispError IO
 
 data LispVal = Atom String
         | List [LispVal]
@@ -20,7 +23,9 @@ data LispVal = Atom String
         | Float Float
         | Complex (Complex Float)
         | Ratio (Ratio Integer)
+        | Port Handle
         | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
+        | IOFunc ([LispVal] -> IOThrowsError LispVal)
         | Func
             { params :: [String]
             , vararg :: (Maybe String)
@@ -47,7 +52,9 @@ showVal (Complex (r :+ i))
     | i < 0 = show r ++ show i ++ "i"
     | i == 0 = show r
 showVal (Ratio contents) = show (numerator contents) ++ "/" ++ show (denominator contents)
+showVal (Port _) = "<IO port>"
 showVal (PrimitiveFunc _) = "<primitive>"
+showVal (IOFunc _) = "<IO primitive>"
 showVal (Func {params = args, vararg = varargs, body = body, closure = env}) =
   "(lambda (" ++ unwords (map show args) ++
      (case varargs of

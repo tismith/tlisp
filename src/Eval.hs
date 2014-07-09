@@ -1,5 +1,5 @@
 module Eval where
-import Primitives (primitives, unpackBool, unpackStr, unpackChar, unpackNum, eqv)
+import Primitives
 import LispVals
 import LispEnvironment
 
@@ -70,6 +70,11 @@ eval env (List (Atom "lambda" : DottedList params varargs : body)) =
     makeVarargs varargs env params body
 eval env (List (Atom "lambda" : varargs@(Atom _) : body)) =
     makeVarargs varargs env [] body
+eval env (List (Atom "apply" : args)) = do
+    argVals <- mapM (eval env) args
+    applyProc argVals
+eval env (List [Atom "load", String filename]) =
+    load filename >>= liftM last . mapM (eval env)
 eval env (List (function : args)) = do
     func <- eval env function
     argVals <- mapM (eval env) args
@@ -139,3 +144,8 @@ makeNormalFunc = makeFunc Nothing
 
 makeVarargs :: LispVal -> Env -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
 makeVarargs = makeFunc . Just . showVal
+
+applyProc :: [LispVal] -> IOThrowsError LispVal
+applyProc [func, List args] = apply func args
+applyProc (func : args) = apply func args
+

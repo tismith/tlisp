@@ -6,9 +6,8 @@ import LispVals
 import Primitives
 import LispEnvironment
 
-import System.IO (hFlush, stdout)
+import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Environment (getArgs)
-import Text.ParserCombinators.Parsec (parse)
 import Control.Monad (liftM, when)
 import Control.Monad.Error (throwError)
 #ifdef LIBEDITLINE
@@ -20,15 +19,7 @@ import Data.Char (isSpace)
 
 main :: IO ()
 main = do args <- getArgs
-          case length args of
-              0 -> runRepl
-              1 -> runOne $ args !! 0
-              otherwise -> putStrLn "Program takes only 0 or 1 argument"
-
-readExpr :: String -> ThrowsError LispVal
-readExpr input = case parse parseExpr "lisp" input of
-    Left err -> throwError $ Parser err
-    Right val -> return val
+          if null args then runRepl else runOne $ args
 
 evalString :: Env -> String -> IO String
 evalString env expr = runIOThrows $ liftM show $ (liftThrows $ readExpr expr) >>= eval env
@@ -36,8 +27,11 @@ evalString env expr = runIOThrows $ liftM show $ (liftThrows $ readExpr expr) >>
 evalAndPrint :: Env -> String -> IO ()
 evalAndPrint env expr =  evalString env expr >>= putStrLn
 
-runOne :: String -> IO ()
-runOne expr = primitiveBindings >>= flip evalAndPrint expr
+runOne :: [String] -> IO ()
+runOne args = do
+    env <- primitiveBindings >>= flip bindVars [("args", List $ map String $ drop 1 args)]
+    (runIOThrows $ liftM show $ eval env (List [Atom "load", String (args !! 0)]))
+         >>= hPutStrLn stderr
 
 runRepl :: IO ()
 runRepl = do

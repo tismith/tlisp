@@ -20,11 +20,13 @@ import Text.ParserCombinators.Parsec (
     , letter
     , digit
     , octDigit
-    , hexDigit)
+    , hexDigit
+    , parse)
 import Numeric (readOct, readHex, readFloat)
 import Data.Char (digitToInt)
 import Data.Ratio (Ratio, numerator, denominator, (%))
 import Data.Complex (Complex((:+)))
+import Control.Monad.Error (throwError)
 import qualified Data.Vector as V (fromList, Vector)
 
 -- $setup
@@ -378,3 +380,14 @@ parseExpr = parseString
     <|> parseVector
     <|> parseBracketedParser (parseList)
     <|> parseBracketedParser (parseDottedList)
+
+readExpr :: String -> ThrowsError LispVal
+readExpr = readOrThrow parseExpr
+
+readExprList :: String -> ThrowsError [LispVal]
+readExprList = readOrThrow (endBy parseExpr spaces)
+
+readOrThrow :: Parser a -> String -> ThrowsError a
+readOrThrow parser input = case parse parser "lisp" input of
+    Left err -> throwError $ Parser err
+    Right val -> return val
