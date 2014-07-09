@@ -1,5 +1,5 @@
 module Eval where
-import Primitives
+import Primitives (primitives, unpackBool, eqv)
 import LispVals
 
 import Control.Monad (liftM)
@@ -13,7 +13,10 @@ eval val@(Complex _) = return val
 eval val@(Ratio _) = return val
 eval val@(Float _) = return val
 eval val@(Char _) = return val
+eval val@(Vector _) = return val
 eval (List [Atom "quote", val]) = return val
+eval e@(List [Atom "quasiquote", val]) = throwError $ BadSpecialForm "Quasiquotes not implemented" e
+eval e@(List [Atom "unquote", val]) = throwError $ BadSpecialForm "Unquotes not implemented" e
 eval (List [Atom "if", pred, conseq, alt]) =
     do result <- eval pred
        case result of
