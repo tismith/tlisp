@@ -9,6 +9,7 @@ import Control.Monad (liftM, foldM, sequence)
 import Control.Monad.Error (throwError, catchError)
 import Data.Ratio (Ratio, (%))
 import Data.Complex (Complex((:+)))
+import Data.Char (toLower)
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives = [("+", anyNumListOp (+)),
@@ -27,15 +28,15 @@ primitives = [("+", anyNumListOp (+)),
               ("&&", boolBoolBinop (&&)),
               ("||", boolBoolBinop (||)),
               ("string=?", strBoolBinop (==)),
-              ("string-ci=?", undefined),
+              ("string-ci=?", strBoolBinop (\x y -> (map (toLower) x) == (map (toLower) y))),
               ("string<=?", strBoolBinop (<=)),
-              ("string-ci<=?", undefined),
+              ("string-ci<=?", strBoolBinop (\x y -> (map (toLower) x) <= (map (toLower) y))),
               ("string>=?", strBoolBinop (>=)),
-              ("string-ci>=?", undefined),
+              ("string-ci>=?", strBoolBinop (\x y -> (map (toLower) x) >= (map (toLower) y))),
               ("string<?", strBoolBinop (<)),
-              ("string-ci<?", undefined),
+              ("string-ci<?", strBoolBinop (\x y -> (map (toLower) x) < (map (toLower) y))),
               ("string>?", strBoolBinop (>)),
-              ("string-ci>?", undefined),
+              ("string-ci>?", strBoolBinop (\x y -> (map (toLower) x) > (map (toLower) y))),
               ("car", car),
               ("cdr", cdr),
               ("cons", cons),
@@ -60,18 +61,79 @@ primitives = [("+", anyNumListOp (+)),
               ("list?", isLispValTest (isLispValList)),
               ("symbol->string", symbolToString),
               ("string->symbol", stringToSymbol),
-              ("make-string", undefined),
-              ("string", undefined),
-              ("string-length", undefined),
-              ("string-ref", undefined),
+              ("make-string", makeString),
+              ("string", charsToString),
+              ("string-length", stringLength),
+              ("string-ref", stringRef),
               ("string-set!", undefined),
-              ("substring", undefined),
-              ("string-append", undefined),
-              ("string->list", undefined),
-              ("list->string", undefined),
-              ("string-copy", undefined),
+              ("substring", subString),
+              ("string-append", stringAppend),
+              ("string->list", stringToList),
+              ("list->string", listToString),
+              ("string-copy", stringCopy),
               ("string-fill!", undefined)]
 
+stringCopy :: [LispVal] -> ThrowsError LispVal
+stringCopy (s:[]) = do
+    rawString <- unpackStr s
+    return $ String rawString
+stringCopy e = throwError $ NumArgs 1 e
+
+listToString :: [LispVal] -> ThrowsError LispVal
+listToString (l:[]) = do
+    cs <- unpackList l
+    rawChars <- mapM (unpackChar) cs
+    return $ String rawChars
+listToString e = throwError $ NumArgs 1 e
+
+stringToList :: [LispVal] -> ThrowsError LispVal
+stringToList (s:[]) = do
+    rawString <- unpackStr s
+    return $ List $ map (Char) rawString
+stringToList e = throwError $ NumArgs 1 e
+
+stringAppend :: [LispVal] -> ThrowsError LispVal
+stringAppend ss@(_:_) = do
+    rawStrings <- mapM (unpackStr) ss
+    return $ String $ concat rawStrings
+stringAppend e = throwError $ NumArgs 1 e
+
+subString :: [LispVal] -> ThrowsError LispVal
+subString (s:b:e:[]) = do
+    rawString <- unpackStr s
+    rawBegin <- unpackNum b
+    rawEnd <- unpackNum e
+    return $ String (take (fromIntegral $ rawEnd - rawBegin) (drop (fromIntegral rawBegin) rawString))
+subString e = throwError $ NumArgs 3 e
+
+stringRef :: [LispVal] -> ThrowsError LispVal
+stringRef (s:k:[]) = do
+    rawString <- unpackStr s
+    rawIndex <- unpackNum k
+    return $ Char (rawString !! (fromIntegral rawIndex))
+stringRef e = throwError $ NumArgs 2 e
+
+stringLength :: [LispVal] -> ThrowsError LispVal
+stringLength (s:[]) = do
+    rawString <- unpackStr s
+    return $ Number (fromIntegral (length rawString))
+stringLength e = throwError $ NumArgs 1 e
+
+makeString :: [LispVal] -> ThrowsError LispVal
+makeString (k:[]) = do
+    size <- unpackNum k
+    return $ String (take (fromIntegral size) $ repeat '.')
+makeString (k:c:[]) = do
+    size <- unpackNum k
+    character <- unpackChar c
+    return $ String (take (fromIntegral size) $ repeat character)
+makeString e = throwError $ NumArgs 2 e
+
+charsToString :: [LispVal] -> ThrowsError LispVal
+charsToString [] = throwError $ NumArgs 1 []
+charsToString chars = do
+    newString <- mapM (unpackChar) chars
+    return $ String newString
 
 isLispValExact :: LispVal -> Bool
 isLispValExact (Number _) = True
@@ -268,6 +330,14 @@ boolBinop unpacker op args = if length args /= 2
 
 strBoolBinop = boolBinop unpackStr
 boolBoolBinop = boolBinop unpackBool
+
+unpackChar :: LispVal -> ThrowsError Char
+unpackChar (Char c) = return c
+unpackChar notChar = throwError $ TypeMismatch "character" notChar
+
+unpackList :: LispVal -> ThrowsError [LispVal]
+unpackList (List l) = return l
+unpackList notList = throwError $ TypeMismatch "list" notList
 
 unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
