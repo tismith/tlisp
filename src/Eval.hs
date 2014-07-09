@@ -93,7 +93,7 @@ apply func args = maybe (throwError $ NotFunction "Unrecognized primitive functi
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives = [("+", anyNumListOp (+)),
-              ("-", anyNumListOp (-)),
+              ("-", anyNumListMinus),
               ("*", anyNumListOp (*)),
               ("/", anyNumListDiv),
               ("mod", onlyNumListOp mod),
@@ -119,6 +119,8 @@ primitives = [("+", anyNumListOp (+)),
               ("eqv?", eqv),
               ("equal?", equal),
               ("string?", isLispValTest (isLispValString)),
+              ("exact?", isLispValTest (isLispValExact)),
+              ("inexact?", isLispValTest (not . isLispValExact)),
               ("boolean?", isLispValTest (isLispValBool)),
               ("number?", isLispValTest (isLispValNum)),
               ("complex?", isLispValTest (isLispValComplex)),
@@ -134,6 +136,11 @@ primitives = [("+", anyNumListOp (+)),
               ("list?", isLispValTest (isLispValList)),
               ("symbol->string", symbolToString),
               ("string->symbol", stringToSymbol)]
+
+isLispValExact :: LispVal -> Bool
+isLispValExact (Number _) = True
+isLispValExact (Ratio _) = True
+isLispValExact _ = False
 
 stringToSymbol :: [LispVal] -> ThrowsError LispVal
 stringToSymbol ((String s):[]) = return $ Atom s
@@ -217,7 +224,8 @@ onlyNumBinOp _ e _ = throwError $ TypeMismatch "integral" e
 
 anyNumListDiv :: [LispVal] -> ThrowsError LispVal
 anyNumListDiv (l:ls@(_:_)) = foldM (anyNumBinDiv) l ls
-anyNumListDiv badArgList = throwError $ NumArgs 2 badArgList
+anyNumListDiv (l:[]) = anyNumBinDiv (Float 1.0) l
+anyNumListDiv badArgList = throwError $ NumArgs 1 badArgList
 
 anyNumBinDiv :: LispVal -> LispVal -> ThrowsError LispVal
 anyNumBinDiv (Number a) (Number b) = return $ Number (div a b)
@@ -241,6 +249,11 @@ anyNumBinDiv e _ = throwError $ TypeMismatch "number" e
 anyNumListOp :: (forall a. Num a => a -> a -> a) -> [LispVal] -> ThrowsError LispVal
 anyNumListOp f (l:ls@(_:_)) = foldM (anyNumBinOp f) l ls
 anyNumListOp _ badArgList = throwError $ NumArgs 2 badArgList
+
+anyNumListMinus :: [LispVal] -> ThrowsError LispVal
+anyNumListMinus (l:ls@(_:_)) = foldM (anyNumBinOp (-)) l ls
+anyNumListMinus (l:[]) = anyNumBinOp (-) (Number 0) l
+anyNumListMinus badArgList = throwError $ NumArgs 1 badArgList
 
 anyNumBinOp :: (forall a. Num a => a -> a -> a) -> LispVal -> LispVal -> ThrowsError LispVal
 anyNumBinOp f (Number a) (Number b) = return $ Number (f a b)
