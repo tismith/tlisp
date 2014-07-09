@@ -3,6 +3,7 @@ module Main where
 import Parse
 import Eval
 import LispVals
+import Primitives
 import LispEnvironment
 
 import System.IO (hFlush, stdout)
@@ -36,12 +37,12 @@ evalAndPrint :: Env -> String -> IO ()
 evalAndPrint env expr =  evalString env expr >>= putStrLn
 
 runOne :: String -> IO ()
-runOne expr = nullEnv >>= flip evalAndPrint expr
+runOne expr = primitiveBindings >>= flip evalAndPrint expr
 
 runRepl :: IO ()
 runRepl = do
     setInhibitCompletion True
-    env <- nullEnv
+    env <- primitiveBindings
     replLoop env
 
 doQuit :: IO Bool
@@ -78,3 +79,7 @@ replLoop env = do
                     _ -> evalAndPrint env trimmedLine >> replLoop env
             else
                 replLoop env
+
+primitiveBindings :: IO Env
+primitiveBindings = nullEnv >>= (flip bindVars $ map makePrimitiveFunc primitives)
+    where makePrimitiveFunc (var, func) = (var, PrimitiveFunc func)

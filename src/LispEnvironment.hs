@@ -4,9 +4,7 @@ import LispVals
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad (liftM, mapM)
 import Control.Monad.Error (ErrorT, runErrorT, throwError)
-import Data.IORef (newIORef, IORef, readIORef, writeIORef)
-
-type Env = IORef [(String, IORef LispVal)]
+import Data.IORef (newIORef, readIORef, writeIORef)
 
 nullEnv :: IO Env
 nullEnv = newIORef []

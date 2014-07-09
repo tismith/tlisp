@@ -5,6 +5,9 @@ import Data.Complex (Complex((:+)))
 import qualified Data.Vector as V (toList, Vector)
 import Text.ParserCombinators.Parsec (ParseError)
 import Control.Monad.Error (throwError, Error, noMsg, strMsg, catchError)
+import Data.IORef (IORef)
+
+type Env = IORef [(String, IORef LispVal)]
 
 data LispVal = Atom String
         | List [LispVal]
@@ -17,6 +20,11 @@ data LispVal = Atom String
         | Float Float
         | Complex (Complex Float)
         | Ratio (Ratio Integer)
+        | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
+        | Func
+            { params :: [String]
+            , vararg :: (Maybe String)
+            , body :: [LispVal], closure :: Env}
 
 instance Show LispVal where show = showVal
 showVal :: LispVal -> String
@@ -39,6 +47,12 @@ showVal (Complex (r :+ i))
     | i < 0 = show r ++ show i ++ "i"
     | i == 0 = show r
 showVal (Ratio contents) = show (numerator contents) ++ "/" ++ show (denominator contents)
+showVal (PrimitiveFunc _) = "<primitive>"
+showVal (Func {params = args, vararg = varargs, body = body, closure = env}) =
+  "(lambda (" ++ unwords (map show args) ++
+     (case varargs of
+        Nothing -> ""
+        Just arg -> " . " ++ arg) ++ ") ...)"
 
 
 data LispError = NumArgs Integer [LispVal]
