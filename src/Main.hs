@@ -3,6 +3,7 @@ module Main where
 import Parse
 import Eval
 import LispVals
+import LispEnvironment
 
 import System.IO (hFlush, stdout)
 import System.Environment (getArgs)
@@ -20,7 +21,7 @@ main :: IO ()
 main = do args <- getArgs
           case length args of
               0 -> runRepl
-              1 -> evalAndPrint $ args !! 0
+              1 -> runOne $ args !! 0
               otherwise -> putStrLn "Program takes only 0 or 1 argument"
 
 readExpr :: String -> ThrowsError LispVal
@@ -28,16 +29,20 @@ readExpr input = case parse parseExpr "lisp" input of
     Left err -> throwError $ Parser err
     Right val -> return val
 
-evalString :: String -> IO String
-evalString expr = return $ extractValue $ trapError (liftM show $ readExpr expr >>= eval)
+evalString :: Env -> String -> IO String
+evalString env expr = runIOThrows $ liftM show $ (liftThrows $ readExpr expr) >>= eval env
 
-evalAndPrint :: String -> IO ()
-evalAndPrint expr =  evalString expr >>= putStrLn
+evalAndPrint :: Env -> String -> IO ()
+evalAndPrint env expr =  evalString env expr >>= putStrLn
+
+runOne :: String -> IO ()
+runOne expr = nullEnv >>= flip evalAndPrint expr
 
 runRepl :: IO ()
 runRepl = do
     setInhibitCompletion True
-    replLoop
+    env <- nullEnv
+    replLoop env
 
 doQuit :: IO Bool
 doQuit = putStrLn "Leaving tlisp" >> return False
@@ -53,8 +58,8 @@ handleCommand s = case s of
     "h" -> doHelp
     _ -> putStrLn ("Unknown command :" ++ s) >> return True
 
-replLoop :: IO ()
-replLoop = do
+replLoop :: Env -> IO ()
+replLoop env = do
     maybeLine <- readline "tlisp>>> "
     case maybeLine of
         Nothing -> return ()
@@ -67,10 +72,9 @@ replLoop = do
                     (':':command) -> do
                         continue <- handleCommand command
                         if continue then
-                            replLoop
+                            replLoop env
                         else
                             return ()
-                    _ -> evalAndPrint trimmedLine >> replLoop
+                    _ -> evalAndPrint env trimmedLine >> replLoop env
             else
-                replLoop
-
+                replLoop env

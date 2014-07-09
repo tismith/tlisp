@@ -19,7 +19,7 @@ cabal-version:       >=1.10
 executable tlisp
   main-is:           Main.hs
   hs-source-dirs:    src
-  build-depends:     base, mtl, parsec, vector
+  build-depends:     base, mtl, parsec, vector, transformers
   if flag(libeditline)
       build-depends:     editline
       cpp-options:       "-DLIBEDITLINE"
