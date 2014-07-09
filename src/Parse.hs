@@ -1,4 +1,6 @@
 module Parse where
+import LispVals
+
 import Control.Monad (liftM, join)
 import Text.ParserCombinators.Parsec (
     char
@@ -23,7 +25,7 @@ import Numeric (readOct, readHex, readFloat)
 import Data.Char (digitToInt)
 import Data.Ratio (Ratio, numerator, denominator, (%))
 import Data.Complex (Complex((:+)))
-import qualified Data.Vector as V (toList, fromList, Vector)
+import qualified Data.Vector as V (fromList, Vector)
 
 -- $setup
 -- >>> import Text.ParserCombinators.Parsec (parse)
@@ -33,53 +35,6 @@ symbol = oneOf "!$%&|*+-/:<=?>@^_~"
 
 spaces :: Parser ()
 spaces = skipMany1 space
-
-data LispVal = Atom String
-        | List [LispVal]
-        | Vector (V.Vector LispVal)
-        | DottedList [LispVal] LispVal
-        | Number Integer
-        | String String
-        | Bool Bool
-        | Char Char
-        | Float Float
-        | Complex (Complex Float)
-        | Ratio (Ratio Integer)
-instance Show LispVal where show = showVal
-
-showVal :: LispVal -> String
-showVal (String contents) = "\"" ++ (unescapeString contents) ++ "\""
-showVal (Atom name) = name
-showVal (Number contents) = show contents
-showVal (Bool True) = "#t"
-showVal (Bool False) = "#f"
-showVal (Char contents) = "#\\" ++ case contents of
-                            '\n' -> "newline"
-                            ' ' -> "space"
-                            _ -> [contents]
-showVal (List contents) = "(" ++ unwordsList contents ++ ")"
-showVal (DottedList head tail) = "(" ++ unwordsList head ++ " . " ++ showVal tail ++ ")"
-showVal (Vector contents) =
-    "#(" ++ (unwordsList . V.toList) contents ++ ")"
-showVal (Float contents) = show contents
-showVal (Complex (r :+ i))
-    | i > 0 = show r ++ "+" ++ show i ++ "i"
-    | i < 0 = show r ++ show i ++ "i"
-    | i == 0 = show r
-showVal (Ratio contents) = show (numerator contents) ++ "/" ++ show (denominator contents)
-
-unwordsList :: [LispVal] -> String
-unwordsList = unwords . map showVal
-
-unescapeString :: String -> String
-unescapeString [] = []
-unescapeString (x:xs)
-    | x == '\n' = "\\n" ++ unescapeString xs
-    | x == '\t' = "\\t" ++ unescapeString xs
-    | x == '\r' = "\\r" ++ unescapeString xs
-    | x == '\"' = "\\\"" ++ unescapeString xs
-    | x == '\\' = "\\\\" ++ unescapeString xs
-    | otherwise = x : unescapeString xs
 
 -- |
 -- >>> parse parseString "lisp" "\"he\\nllo\""

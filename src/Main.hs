@@ -2,6 +2,7 @@
 module Main where
 import Parse
 import Eval
+import LispVals
 
 import System.IO (hFlush, stdout)
 import System.Environment (getArgs)
