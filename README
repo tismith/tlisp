@@ -21,6 +21,7 @@ Interesting features:
 
 *: native support for integers, rationals, floating point and complex numbers
 *: arithmetic operations perform type promotion between the numerical types
+*: uses libreadline (or libeditline on a OSX) for the repl
 
 =======
 To do:
