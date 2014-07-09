@@ -1,5 +1,5 @@
 module Eval where
-import Primitives (primitives, unpackBool, eqv)
+import Primitives (primitives, unpackBool, unpackStr, unpackChar, unpackNum, eqv)
 import LispVals
 import LispEnvironment
 
@@ -41,6 +41,23 @@ eval env (List ((Atom "case"):key:c:cs)) =
             Just l -> return l
             Nothing -> throwError $ Unspecified "no matching case"
 eval env (List ([Atom "set!", Atom var, form])) = eval env form >>= setVar env var
+eval env (List ([Atom "string-set!", Atom var, i, c])) =
+    do i' <- eval env i
+       index <- liftThrows $ unpackNum i'
+       c' <- eval env c
+       char <- liftThrows $ unpackChar c'
+       v <- getVar env var
+       str <- liftThrows $ unpackStr $ v
+       let (f,s) = splitAt (fromIntegral index) str
+       case (s) of
+            [] -> throwError $ Unspecified "invalid index"
+            _ -> setVar env var (String $ f ++ [char] ++ (drop 1 s))
+eval env (List ([Atom "string-fill!", Atom var, c])) =
+    do c' <- eval env c
+       char <- liftThrows $ unpackChar c'
+       v <- getVar env var
+       str <- liftThrows $ unpackStr $ v
+       setVar env var (String $ (map (const char) str))
 eval env (List ([Atom "define", Atom var, form])) = eval env form >>= defineVar env var
 eval env (List (Atom func : args)) = mapM (eval env) args >>= liftThrows . apply func
 eval _ badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm

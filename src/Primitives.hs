@@ -65,13 +65,11 @@ primitives = [("+", anyNumListOp (+)),
               ("string", charsToString),
               ("string-length", stringLength),
               ("string-ref", stringRef),
-              ("string-set!", undefined),
               ("substring", subString),
               ("string-append", stringAppend),
               ("string->list", stringToList),
               ("list->string", listToString),
-              ("string-copy", stringCopy),
-              ("string-fill!", undefined)]
+              ("string-copy", stringCopy)]
 
 stringCopy :: [LispVal] -> ThrowsError LispVal
 stringCopy (s:[]) = do
