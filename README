@@ -7,6 +7,7 @@ $ cabal install --only-dependencies --enable-tests
 $ cabal configure --enable-tests
 $ cabal build
 
+======
 To run:
 
 $ cabal run
@@ -14,3 +15,22 @@ tlisp>>> (load "stdlib.scm")
 >>>(lambda ("pred" . lst) ...)
 tlisp>>> (map (curry + 2) ’(1 2 3 4))
 (3 4 5 6)
+
+=======
+Interesting features:
+
+*: native support for integers, rationals, floating point and complex numbers
+*: arithmetic operations perform type promotion between the numerical types
+
+=======
+To do:
+
+*: switch to using StateT rather than IORefs for the environment
+*: support immutable and mutable lisp values
+*: move set! family of functions into another list of EnvPrimitives
+
+=======
+End game goals:
+
+*: add macros
+*: add continuations
