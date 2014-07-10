@@ -35,6 +35,7 @@ To do:
 *: support immutable and mutable lisp values
 *: move set! family of functions into another list of EnvPrimitives
 *: add more tests, especially for the primitives
+*: add eval support for quasiquotes and unquotes
 
 =======
 End game goals:
