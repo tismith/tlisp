@@ -124,6 +124,7 @@ evalCondClause env (List (test:exprs)) =
 evalCondClause _ badForm = throwError $ BadSpecialForm "Unrecognized cond clause form" badForm
 
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
+apply (IOFunc func) args = func args
 apply (PrimitiveFunc func) args = liftThrows $ func args
 apply (Func params varargs body closure) args =
     if num params /= num args && varargs == Nothing
@@ -135,6 +136,7 @@ apply (Func params varargs body closure) args =
           bindVarArgs arg env = case arg of
               Just argName -> liftIO $ bindVars env [(argName, List $ remainingArgs)]
               Nothing -> return env
+apply e _ = throwError $ TypeMismatch "function" e
 
 makeFunc :: Monad m => Maybe String -> Env -> [LispVal] -> [LispVal] -> m LispVal
 makeFunc varargs env params body = return $ Func (map showVal params) varargs body env

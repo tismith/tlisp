@@ -80,3 +80,5 @@
 (define (or . lst)          (fold || #f lst))
 (define (any? pred . lst)   (apply or (map pred lst)))
 (define (every? pred . lst) (apply and (map pred lst)))
+
+(define (string-length s)       (length (string->list s)))

@@ -76,7 +76,6 @@ primitives = [("+", anyNumListOp (+)),
               ("string->symbol", stringToSymbol),
               ("make-string", makeString),
               ("string", charsToString),
-              ("string-length", stringLength),
               ("string-ref", stringRef),
               ("substring", subString),
               ("string-append", stringAppend),
@@ -123,12 +122,6 @@ stringRef (s:k:[]) = do
     rawIndex <- unpackNum k
     return $ Char (rawString !! (fromIntegral rawIndex))
 stringRef e = throwError $ NumArgs 2 e
-
-stringLength :: [LispVal] -> ThrowsError LispVal
-stringLength (s:[]) = do
-    rawString <- unpackStr s
-    return $ Number (fromIntegral (length rawString))
-stringLength e = throwError $ NumArgs 1 e
 
 makeString :: [LispVal] -> ThrowsError LispVal
 makeString (k:[]) = do
