@@ -27,11 +27,11 @@ Interesting features, beyond those in write-yourself-a-scheme:
 *: arithmetic operations perform type promotion between the numerical types
 *: uses libreadline (or libeditline on OSX) for the repl
 *: has doctest tests for the parser
+*: uses stateT to hold the environment
 
 =======
 To do:
 
-*: switch to using StateT rather than IORefs for the environment
 *: support immutable and mutable lisp values
 *: move set! family of functions into another list of EnvPrimitives
 *: add more tests, especially for the primitives
