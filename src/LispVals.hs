@@ -3,14 +3,23 @@ module LispVals where
 import Data.Ratio (Ratio, numerator, denominator)
 import Data.Complex (Complex((:+)))
 import qualified Data.Vector as V (toList, Vector)
+import qualified Data.Map as M (Map)
 import Text.ParserCombinators.Parsec (ParseError)
-import Control.Monad.Error (throwError, Error, noMsg, strMsg, catchError)
-import Data.IORef (IORef)
+import Control.Monad.Error (Error, noMsg, strMsg)
 import Control.Monad.Error (ErrorT)
+import Control.Monad.State (State, StateT)
 import System.IO (Handle)
 
-type Env = IORef [(String, IORef LispVal)]
-type IOThrowsError = ErrorT LispError IO
+type Env = M.Map String LispVal
+type ThrowsError = Either LispError
+-- ErrorT e m a ~ m (Either e a)
+-- State s a ~ s -> (a, s)
+-- ErrorT e (State s a) ~ s -> (Either e a, s)
+type EnvThrowsError = ErrorT LispError (State Env)
+-- StateT s m a ~ s -> m (a, s)
+-- ErrorT e (StateT s m) a ~ s -> m (Either e a, s)
+-- StateT s (ErrorT e m) a ~ s -> m (Either e (a, s))
+type IOThrowsError = ErrorT LispError (StateT Env IO)
 
 data LispVal = Atom String
         | List [LispVal]
@@ -52,15 +61,14 @@ showVal (Complex (r :+ i))
     | i < 0 = show r ++ show i ++ "i"
     | i == 0 = show r
 showVal (Ratio contents) = show (numerator contents) ++ "/" ++ show (denominator contents)
-showVal (Port _) = "<IO port>"
-showVal (PrimitiveFunc _) = "<primitive>"
-showVal (IOFunc _) = "<IO primitive>"
+showVal (Port _) = "#<port>"
+showVal (PrimitiveFunc _) = "#<primitive>"
+showVal (IOFunc _) = "#<io primitive>"
 showVal (Func {params = args, vararg = varargs, body = body, closure = env}) =
   "(lambda (" ++ unwords (map show args) ++
      (case varargs of
         Nothing -> ""
         Just arg -> " . " ++ arg) ++ ") ...)"
-
 
 data LispError = NumArgs Integer [LispVal]
                | TypeMismatch String LispVal
@@ -87,13 +95,6 @@ instance Show LispError where show = showError
 instance Error LispError where
      noMsg = Default "An error has occurred"
      strMsg = Default
-
-type ThrowsError = Either LispError
-
-trapError action = catchError action (return . show)
-
-extractValue :: ThrowsError a -> a
-extractValue (Right val) = val
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal

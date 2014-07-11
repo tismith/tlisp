@@ -1,50 +1,53 @@
+{-# LANGUAGE FlexibleContexts #-}
 module LispEnvironment where
 import LispVals
 
-import Control.Monad.IO.Class (liftIO)
 import Control.Monad (liftM, mapM)
-import Control.Monad.Error (ErrorT, runErrorT, throwError)
-import Data.IORef (newIORef, readIORef, writeIORef)
+import Control.Monad.State (get, put, runStateT)
+import Control.Monad.State.Class (MonadState)
+import Control.Monad.Error (ErrorT, runErrorT, throwError, MonadError, catchError)
+import Control.Monad.Error.Class (MonadError)
+import Control.Monad.IO.Class (liftIO)
+import qualified Data.Map as M (empty, lookup, insert, fromList, union, toList)
 
-nullEnv :: IO Env
-nullEnv = newIORef []
+envFromList :: [(String, LispVal)] -> Env
+envFromList = M.fromList
+
+envToList :: Env -> [(String, LispVal)]
+envToList = M.toList
 
 liftThrows :: ThrowsError a -> IOThrowsError a
 liftThrows (Left err) = throwError err
 liftThrows (Right val) = return val
 
-runIOThrows :: IOThrowsError String -> IO String
-runIOThrows action = runErrorT (trapError action) >>= return . extractValue
+runIOThrows :: IOThrowsError String -> Env -> IO (String, Env)
+runIOThrows action env = do
+        (a, s) <- runStateT (runErrorT (trapError action)) env
+        return $ (extractValue a, s)
+    where trapError action = catchError action (return . show)
 
-isBound :: Env -> String -> IO Bool
-isBound envRef var = readIORef envRef >>= return . maybe False (const True) . lookup var
+extractValue :: ThrowsError a -> a
+extractValue (Right val) = val
 
-getVar :: Env -> String -> IOThrowsError LispVal
-getVar envRef var  =  do env <- liftIO $ readIORef envRef
-                         maybe (throwError $ UnboundVar "Getting an unbound variable" var)
-                               (liftIO . readIORef)
-                               (lookup var env)
+getEnv :: MonadState Env m => m Env
+getEnv = get
 
-setVar :: Env -> String -> LispVal -> IOThrowsError LispVal
-setVar envRef var value = do env <- liftIO $ readIORef envRef
-                             maybe (throwError $ UnboundVar "Setting an unbound variable" var)
-                                   (liftIO . (flip writeIORef value))
-                                   (lookup var env)
-                             return value
+putEnv :: MonadState Env m => Env -> m ()
+putEnv = put
 
-defineVar :: Env -> String -> LispVal -> IOThrowsError LispVal
-defineVar envRef var value = do
-    alreadyDefined <- liftIO $ isBound envRef var
-    if alreadyDefined
-       then setVar envRef var value >> return value
-       else liftIO $ do
-          valueRef <- newIORef value
-          env <- readIORef envRef
-          writeIORef envRef ((var, valueRef) : env)
-          return value
+getVar :: (MonadState Env m, MonadError LispError m) => String -> m LispVal
+getVar var = get >>= maybe (throwError $ UnboundVar "Getting an unbound variable" var) (return) . M.lookup var
 
-bindVars :: Env -> [(String, LispVal)] -> IO Env
-bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
-    where extendEnv bindings env = liftM (++ env) (mapM addBinding bindings)
-          addBinding (var, value) = do ref <- newIORef value
-                                       return (var, ref)
+setVar :: (MonadState Env m, MonadError LispError m) => String -> LispVal -> m LispVal
+setVar var value = get >>= \e -> maybe
+            (throwError $ UnboundVar "Setting an unbound variable" var)
+            (const $ put $ M.insert var value e) (M.lookup var e)
+        >> return value
+
+defineVar :: (MonadState Env m) => String -> LispVal -> m LispVal
+defineVar var value = get >>= put . (M.insert var value) >> return value
+
+bindVars :: (MonadState Env m) => [(String, LispVal)] -> m ()
+bindVars bindings = get >>= extendEnv bindings >>= put
+    where extendEnv bindings env = return (M.union (envFromList bindings) env)
+

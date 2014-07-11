@@ -21,36 +21,47 @@ main :: IO ()
 main = do args <- getArgs
           if null args then runRepl else runOne $ args
 
-evalString :: Env -> String -> IO String
-evalString env expr = runIOThrows $ liftM show $ (liftThrows $ readExpr expr) >>= eval env
+evalString :: Env -> String -> IO (String, Env)
+evalString env expr = runIOThrows (liftM show ((liftThrows $ readExpr expr) >>= eval)) env
 
-evalAndPrint :: Env -> String -> IO ()
-evalAndPrint env expr =  evalString env expr >>= putStrLn
+evalAndPrint :: Env -> String -> IO Env
+evalAndPrint env expr = do
+    (out, newEnv) <- evalString env expr
+    putStrLn out
+    return newEnv
 
 runOne :: [String] -> IO ()
 runOne args = do
-    env <- primitiveBindings >>= flip bindVars [("args", List $ map String $ drop 1 args)]
-    (runIOThrows $ liftM show $ eval env (List [Atom "load", String (args !! 0)]))
-         >>= hPutStrLn stderr
+    (out, _) <- runIOThrows (liftM show
+            (bindVars [("args", List $ map String $ drop 1 args)] >> eval (List [Atom "load", String (args !! 0)])))
+        primitiveBindings
+    hPutStrLn stderr out
 
 runRepl :: IO ()
 runRepl = do
     setInhibitCompletion True
-    env <- primitiveBindings
-    replLoop env
+    replLoop primitiveBindings
 
 doQuit :: IO Bool
 doQuit = putStrLn "Leaving tlisp" >> return False
 
-doHelp :: IO Bool
-doHelp = putStrLn "Welcome to tlisp!\n\t:quit\t\tExits the repl\n\t:help\t\tThis message" >> return True
+doHelp :: IO ()
+doHelp = putStrLn "Welcome to tlisp!\n\t:quit\t\tExits the repl\n\t:help\t\tThis message"
 
-handleCommand :: String -> IO Bool
-handleCommand s = case s of
+showBinding :: (String, LispVal) -> String
+showBinding (s,l) = s ++ " -> " ++ show l
+
+doEnv :: Env -> IO ()
+doEnv e = putStrLn $ unlines $ map (showBinding) $ envToList e
+
+handleCommand :: Env -> String -> IO Bool
+handleCommand e s = case s of
     "quit" -> doQuit
     "q" -> doQuit
-    "help" -> doHelp
-    "h" -> doHelp
+    "help" -> doHelp >> return True
+    "h" -> doHelp >> return True
+    "env" -> doEnv e >> return True
+    "e" -> doEnv e >> return True
     _ -> putStrLn ("Unknown command :" ++ s) >> return True
 
 replLoop :: Env -> IO ()
@@ -65,16 +76,15 @@ replLoop env = do
                 addHistory trimmedLine
                 case trimmedLine of
                     (':':command) -> do
-                        continue <- handleCommand command
+                        continue <- handleCommand env command
                         if continue then
                             replLoop env
                         else
                             return ()
-                    _ -> evalAndPrint env trimmedLine >> replLoop env
+                    _ -> evalAndPrint env trimmedLine >>= replLoop
             else
                 replLoop env
 
-primitiveBindings :: IO Env
-primitiveBindings = nullEnv >>= (flip bindVars $ map (makeFunc IOFunc) ioPrimitives
-                                            ++ map (makeFunc PrimitiveFunc) primitives)
+primitiveBindings :: Env
+primitiveBindings = envFromList (map (makeFunc IOFunc) ioPrimitives ++ (map (makeFunc PrimitiveFunc) primitives))
     where makeFunc constructor (var, func) = (var, constructor func)
