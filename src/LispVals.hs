@@ -5,8 +5,7 @@ import Data.Complex (Complex((:+)))
 import qualified Data.Vector as V (toList, Vector)
 import qualified Data.Map as M (Map)
 import Text.ParserCombinators.Parsec (ParseError)
-import Control.Monad.Error (Error, noMsg, strMsg)
-import Control.Monad.Error (ErrorT)
+import Control.Monad.Error (ErrorT, Error, noMsg, strMsg)
 import Control.Monad.State (State, StateT)
 import System.IO (Handle)
 
@@ -37,12 +36,12 @@ data LispVal = Atom String
         | IOFunc ([LispVal] -> IOThrowsError LispVal)
         | Func
             { params :: [String]
-            , vararg :: (Maybe String)
+            , vararg :: Maybe String
             , body :: [LispVal], closure :: Env}
 
 instance Show LispVal where show = showVal
 showVal :: LispVal -> String
-showVal (String contents) = "\"" ++ (unescapeString contents) ++ "\""
+showVal (String contents) = "\"" ++ unescapeString contents ++ "\""
 showVal (Atom name) = name
 showVal (Number contents) = show contents
 showVal (Bool True) = "#t"
@@ -52,19 +51,19 @@ showVal (Char contents) = "#\\" ++ case contents of
                             ' ' -> "space"
                             _ -> [contents]
 showVal (List contents) = "(" ++ unwordsList contents ++ ")"
-showVal (DottedList head tail) = "(" ++ unwordsList head ++ " . " ++ showVal tail ++ ")"
+showVal (DottedList h t) = "(" ++ unwordsList h ++ " . " ++ showVal t ++ ")"
 showVal (Vector contents) =
     "#(" ++ (unwordsList . V.toList) contents ++ ")"
 showVal (Float contents) = show contents
 showVal (Complex (r :+ i))
     | i > 0 = show r ++ "+" ++ show i ++ "i"
     | i < 0 = show r ++ show i ++ "i"
-    | i == 0 = show r
+    | otherwise = show r
 showVal (Ratio contents) = show (numerator contents) ++ "/" ++ show (denominator contents)
-showVal (Port _) = "#<port>"
-showVal (PrimitiveFunc _) = "#<primitive>"
-showVal (IOFunc _) = "#<io primitive>"
-showVal (Func {params = args, vararg = varargs, body = body, closure = env}) =
+showVal (Port _) = "<port>"
+showVal (PrimitiveFunc _) = "<primitive>"
+showVal (IOFunc _) = "<io primitive>"
+showVal (Func {params = args, vararg = varargs}) =
   "(lambda (" ++ unwords (map show args) ++
      (case varargs of
         Nothing -> ""
@@ -89,6 +88,7 @@ showError (TypeMismatch expected found) = "Invalid type: expected " ++ expected
                                        ++ ", found " ++ show found
 showError (Parser parseErr) = "Parse error at " ++ show parseErr
 showError (Unspecified message) = "Unspecified operation: " ++ message
+showError (Default message) = "Unknown error: " ++ message
 
 instance Show LispError where show = showError
 

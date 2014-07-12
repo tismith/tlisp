@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Parse where
 import LispVals
 
@@ -24,10 +25,10 @@ import Text.ParserCombinators.Parsec (
     , parse)
 import Numeric (readOct, readHex, readFloat)
 import Data.Char (digitToInt)
-import Data.Ratio (Ratio, numerator, denominator, (%))
+import Data.Ratio ((%))
 import Data.Complex (Complex((:+)))
 import Control.Monad.Error (throwError)
-import qualified Data.Vector as V (fromList, Vector)
+import qualified Data.Vector as V (fromList)
 
 -- $setup
 -- >>> import Text.ParserCombinators.Parsec (parse)
@@ -248,9 +249,9 @@ parseList = liftM List $ sepEndBy parseExpr spaces
 -- Right (1 . 2)
 parseDottedList :: Parser LispVal
 parseDottedList = do
-    head <- endBy parseExpr spaces
-    tail <- char '.' >> spaces >> parseExpr
-    return $ DottedList head tail
+    h <- endBy parseExpr spaces
+    t <- char '.' >> spaces >> parseExpr
+    return $ DottedList h t
 
 parseQuoted :: Parser LispVal
 parseQuoted = do

@@ -7,7 +7,7 @@ import LispEnvironment
 import Parse
 
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (liftM, foldM, sequence)
+import Control.Monad (liftM, foldM)
 import Control.Monad.Error (throwError, catchError)
 import Data.Ratio (Ratio, (%))
 import Data.Complex (Complex((:+)))
@@ -312,16 +312,14 @@ anyOrdBoolListOp _ badArgList = throwError $ NumArgs 2 badArgList
 anyOrdBoolBinOp :: (forall a. Ord a => a -> a -> Bool) -> LispVal -> LispVal -> ThrowsError LispVal
 anyOrdBoolBinOp f (Number a) (Number b) = return $ Bool (f a b)
 anyOrdBoolBinOp f (Number a) (Float b) = return $ Bool (f (fromIntegral a) b)
-anyOrdBoolBinOp f (Number a) e@(Complex _) = throwError $ TypeMismatch "ordered" e
 anyOrdBoolBinOp f (Number a) (Ratio b) = return $ Bool (f (a % 1) b)
 anyOrdBoolBinOp f (Float a) (Number b) = return $ Bool (f a (fromIntegral b))
 anyOrdBoolBinOp f (Float a) (Float b) = return $ Bool (f a b)
-anyOrdBoolBinOp f (Float a) e@(Complex _) = throwError $ TypeMismatch "ordered" e
 anyOrdBoolBinOp f (Float a) (Ratio b) = return $ Bool (f a (fromRational b))
-anyOrdBoolBinOp f e@(Complex _) _ = throwError $ TypeMismatch "ordered" e
+anyOrdBoolBinOp _ e@(Complex _) _ = throwError $ TypeMismatch "ordered" e
+anyOrdBoolBinOp _ _ e@(Complex _) = throwError $ TypeMismatch "ordered" e
 anyOrdBoolBinOp f (Ratio a) (Number b) = return $ Bool (f a (b % 1))
 anyOrdBoolBinOp f (Ratio a) (Float b) = return $ Bool (f (fromRational a) b)
-anyOrdBoolBinOp f (Ratio a) e@(Complex _) = throwError $ TypeMismatch "ordered" e
 anyOrdBoolBinOp f (Ratio a) (Ratio b) = return $ Bool (f a b)
 anyOrdBoolBinOp _ e _ = throwError $ TypeMismatch "number" e
 
@@ -387,13 +385,13 @@ unpackBool (Bool b) = return b
 unpackBool notBool = throwError $ TypeMismatch "boolean" notBool
 
 car :: [LispVal] -> ThrowsError LispVal
-car [List (x : xs)] = return x
-car [DottedList (x : xs) _] = return x
+car [List (x:_)] = return x
+car [DottedList (x:_) _] = return x
 car [badArg] = throwError $ TypeMismatch "pair" badArg
 car badArgList = throwError $ NumArgs 1 badArgList
 
 cdr :: [LispVal] -> ThrowsError LispVal
-cdr [List (x : xs)] = return $ List xs
+cdr [List (_ : xs)] = return $ List xs
 cdr [DottedList (_ : xs) x] = return $ DottedList xs x
 cdr [DottedList _ x] = return x
 cdr [badArg] = throwError $ TypeMismatch "pair" badArg
@@ -418,8 +416,9 @@ eqv [(DottedList xs x), (DottedList ys y)] = eqv [List $ xs ++ [x], List $ ys ++
 eqv [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) &&
                                                     (and $ map eqvPair $ zip arg1 arg2)
     where eqvPair (x1, x2) = case eqv [x1, x2] of
-                               Left err -> False
+                               Left _ -> False
                                Right (Bool val) -> val
+                               Right _ -> False
 eqv [_, _] = return $ Bool False
 eqv badArgList = throwError $ NumArgs 2 badArgList
 

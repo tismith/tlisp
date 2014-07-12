@@ -2,13 +2,10 @@
 module LispEnvironment where
 import LispVals
 
-import Control.Monad (liftM, mapM)
 import Control.Monad.State (get, put, runState, runStateT)
 import Control.Monad.State.Class (MonadState)
 import Control.Monad.Error (ErrorT, runErrorT, throwError, MonadError, catchError)
-import Control.Monad.Error.Class (MonadError)
-import Control.Monad.IO.Class (liftIO)
-import qualified Data.Map as M (empty, lookup, insert, fromList, union, toList)
+import qualified Data.Map as M (lookup, insert, fromList, union, toList)
 
 envFromList :: [(String, LispVal)] -> Env
 envFromList = M.fromList
@@ -32,11 +29,12 @@ liftThrows (Right val) = return val
 runIOThrows :: IOThrowsError String -> Env -> IO (String, Env)
 runIOThrows action env = do
         (a, s) <- runStateT (runErrorT (trapError action)) env
-        return $ (extractValue a, s)
-    where trapError action = catchError action (return . show)
+        return (extractValue a, s)
+    where trapError act = catchError act (return . show)
 
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
+extractValue (Left _) = undefined
 
 getEnv :: MonadState Env m => m Env
 getEnv = get
@@ -45,7 +43,7 @@ putEnv :: MonadState Env m => Env -> m ()
 putEnv = put
 
 getVar :: (MonadState Env m, MonadError LispError m) => String -> m LispVal
-getVar var = get >>= maybe (throwError $ UnboundVar "Getting an unbound variable" var) (return) . M.lookup var
+getVar var = get >>= maybe (throwError $ UnboundVar "Getting an unbound variable" var) return . M.lookup var
 
 setVar :: (MonadState Env m, MonadError LispError m) => String -> LispVal -> m LispVal
 setVar var value = get >>= \e -> maybe
@@ -54,9 +52,9 @@ setVar var value = get >>= \e -> maybe
         >> return value
 
 defineVar :: (MonadState Env m) => String -> LispVal -> m LispVal
-defineVar var value = get >>= put . (M.insert var value) >> return value
+defineVar var value = get >>= put . M.insert var value >> return value
 
 bindVars :: (MonadState Env m) => [(String, LispVal)] -> m ()
 bindVars bindings = get >>= extendEnv bindings >>= put
-    where extendEnv bindings env = return (M.union (envFromList bindings) env)
+    where extendEnv b env = return $ envFromList b `M.union` env
 

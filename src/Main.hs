@@ -19,10 +19,10 @@ import Data.Char (isSpace)
 
 main :: IO ()
 main = do args <- getArgs
-          if null args then runRepl else runOne $ args
+          if null args then runRepl else runOne args
 
 evalString :: Env -> String -> IO (String, Env)
-evalString env expr = runIOThrows (liftM show ((liftThrows $ readExpr expr) >>= eval)) env
+evalString env expr = runIOThrows (liftM show (liftThrows (readExpr expr) >>= eval)) env
 
 evalAndPrint :: Env -> String -> IO Env
 evalAndPrint env expr = do
@@ -33,7 +33,7 @@ evalAndPrint env expr = do
 runOne :: [String] -> IO ()
 runOne args = do
     (out, _) <- runIOThrows (liftM show
-            (bindVars [("args", List $ map String $ drop 1 args)] >> eval (List [Atom "load", String (args !! 0)])))
+            (bindVars [("args", List $ map String $ drop 1 args)] >> eval (List [Atom "load", String (head args)])))
         primitiveBindings
     hPutStrLn stderr out
 
@@ -52,7 +52,7 @@ showBinding :: (String, LispVal) -> String
 showBinding (s,l) = s ++ " -> " ++ show l
 
 doEnv :: Env -> IO ()
-doEnv e = putStrLn $ unlines $ map (showBinding) $ envToList e
+doEnv e = putStrLn $ unlines $ map showBinding $ envToList e
 
 handleCommand :: Env -> String -> IO Bool
 handleCommand e s = case s of
@@ -70,21 +70,18 @@ replLoop env = do
     case maybeLine of
         Nothing -> return ()
         Just line -> do
-            let trimmedLine = dropWhile (isSpace) line
-            if (not $ null trimmedLine)
+            let trimmedLine = dropWhile isSpace line
+            if not $ null trimmedLine
             then do
                 addHistory trimmedLine
                 case trimmedLine of
                     (':':command) -> do
                         continue <- handleCommand env command
-                        if continue then
-                            replLoop env
-                        else
-                            return ()
+                        when continue $ replLoop env
                     _ -> evalAndPrint env trimmedLine >>= replLoop
             else
                 replLoop env
 
 primitiveBindings :: Env
-primitiveBindings = envFromList (map (makeFunc IOFunc) ioPrimitives ++ (map (makeFunc PrimitiveFunc) primitives))
+primitiveBindings = envFromList (map (makeFunc IOFunc) ioPrimitives ++ map (makeFunc PrimitiveFunc) primitives)
     where makeFunc constructor (var, func) = (var, constructor func)
