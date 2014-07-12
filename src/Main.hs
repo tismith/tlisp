@@ -6,10 +6,9 @@ import Primitives
 import LispEnvironment
 
 import Control.Monad.IO.Class (liftIO)
-import System.IO (hFlush, hPutStrLn, stderr, stdout)
+import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)
 import Control.Monad (liftM, when)
-import Control.Monad.Error (throwError)
 import System.Console.Haskeline (InputT, runInputT, getInputLine, defaultSettings, setComplete)
 import System.Console.Haskeline.Completion (noCompletion)
 import Data.Char (isSpace)
@@ -79,5 +78,5 @@ replLoop env = do
                 replLoop env
 
 primitiveBindings :: Env
-primitiveBindings = envFromList (map (makeFunc IOFunc) ioPrimitives ++ map (makeFunc PrimitiveFunc) primitives)
-    where makeFunc constructor (var, func) = (var, constructor func)
+primitiveBindings = envFromList (map (mF IOFunc) ioPrimitives ++ map (mF PrimitiveFunc) primitives)
+    where mF constructor (var, func) = (var, constructor func)
