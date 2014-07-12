@@ -23,7 +23,7 @@ Interesting features, beyond those in write-yourself-a-scheme:
 
 *: native support for integers, rationals, floating point and complex numbers
 *: arithmetic operations perform type promotion between the numerical types
-*: uses haskeline for command history in the repl
+*: uses haskeline for command history and tab-completion in the repl
 *: has doctest tests for the parser
 *: uses stateT to hold the environment
 

@@ -5,7 +5,10 @@ import LispVals
 import Control.Monad.State (get, put, runState, runStateT)
 import Control.Monad.State.Class (MonadState)
 import Control.Monad.Error (ErrorT, runErrorT, throwError, MonadError, catchError)
-import qualified Data.Map as M (lookup, insert, fromList, union, toList)
+import qualified Data.Map as M (lookup, insert, fromList, union, toList, keys)
+
+envSymbols :: Env -> [String]
+envSymbols = M.keys
 
 envFromList :: [(String, LispVal)] -> Env
 envFromList = M.fromList

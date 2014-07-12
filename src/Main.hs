@@ -5,13 +5,17 @@ import LispVals
 import Primitives
 import LispEnvironment
 
+import Control.Monad.Trans.Class (lift)
 import Control.Monad.IO.Class (liftIO)
+-- need the strict state monad for monadexception
+import Control.Monad.State.Strict (StateT, put, get, evalStateT)
 import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)
 import Control.Monad (liftM, when)
-import System.Console.Haskeline (InputT, runInputT, getInputLine, defaultSettings, setComplete)
-import System.Console.Haskeline.Completion (noCompletion)
+import System.Console.Haskeline (InputT, runInputT, getInputLine, defaultSettings, setComplete, Completion, CompletionFunc)
+import System.Console.Haskeline.Completion (completeWord, completeQuotedWord, simpleCompletion, noCompletion)
 import Data.Char (isSpace)
+import Data.List (isPrefixOf)
 
 main :: IO ()
 main = do args <- getArgs
@@ -35,8 +39,19 @@ runOne args = do
 
 runRepl :: IO ()
 runRepl = do
-    --setInhibitCompletion True
-    runInputT (setComplete (noCompletion) defaultSettings) $ replLoop primitiveBindings
+    evalStateT (runInputT (setComplete replComplete defaultSettings) replLoop) primitiveBindings
+
+replComplete :: CompletionFunc (StateT Env IO)
+replComplete = completeQuotedWord Nothing "\"\'" (const $ return []) symbolComplete
+
+symbolComplete :: CompletionFunc (StateT Env IO)
+symbolComplete = completeWord Nothing "() \t" completeEnv
+
+completeEnv :: String -> (StateT Env IO) [Completion]
+completeEnv s = do
+    env <- get
+    let keys = envSymbols env
+    return $ map (simpleCompletion) $ filter (isPrefixOf s) keys
 
 doQuit :: IO Bool
 doQuit = putStrLn "Leaving tlisp" >> return False
@@ -60,8 +75,8 @@ handleCommand e s = case s of
     "e" -> doEnv e >> return True
     _ -> putStrLn ("Unknown command :" ++ s) >> return True
 
-replLoop :: Env -> InputT IO ()
-replLoop env = do
+replLoop :: InputT (StateT Env IO) ()
+replLoop = do
     maybeLine <- getInputLine "tlisp>>> "
     case maybeLine of
         Nothing -> return ()
@@ -71,11 +86,12 @@ replLoop env = do
             then do
                 case trimmedLine of
                     (':':command) -> do
+                        env <- lift get
                         continue <- liftIO $ handleCommand env command
-                        when continue $ replLoop env
-                    _ -> liftIO (evalAndPrint env trimmedLine) >>= replLoop
+                        when continue $ replLoop
+                    _ -> lift get >>= \e -> liftIO (evalAndPrint e trimmedLine) >>= lift . put >> replLoop
             else
-                replLoop env
+                replLoop
 
 primitiveBindings :: Env
 primitiveBindings = envFromList (map (mF IOFunc) ioPrimitives ++ map (mF PrimitiveFunc) primitives)
