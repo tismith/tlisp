@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 module Main where
 import Parse
 import Eval
@@ -6,15 +5,13 @@ import LispVals
 import Primitives
 import LispEnvironment
 
+import Control.Monad.IO.Class (liftIO)
 import System.IO (hFlush, hPutStrLn, stderr, stdout)
 import System.Environment (getArgs)
 import Control.Monad (liftM, when)
 import Control.Monad.Error (throwError)
-#ifdef LIBEDITLINE
-import System.Console.Editline.Readline (readline, addHistory, setInhibitCompletion)
-#else
-import System.Console.Readline (readline, addHistory, setInhibitCompletion)
-#endif
+import System.Console.Haskeline (InputT, runInputT, getInputLine, defaultSettings, setComplete)
+import System.Console.Haskeline.Completion (noCompletion)
 import Data.Char (isSpace)
 
 main :: IO ()
@@ -39,8 +36,8 @@ runOne args = do
 
 runRepl :: IO ()
 runRepl = do
-    setInhibitCompletion True
-    replLoop primitiveBindings
+    --setInhibitCompletion True
+    runInputT (setComplete (noCompletion) defaultSettings) $ replLoop primitiveBindings
 
 doQuit :: IO Bool
 doQuit = putStrLn "Leaving tlisp" >> return False
@@ -64,21 +61,20 @@ handleCommand e s = case s of
     "e" -> doEnv e >> return True
     _ -> putStrLn ("Unknown command :" ++ s) >> return True
 
-replLoop :: Env -> IO ()
+replLoop :: Env -> InputT IO ()
 replLoop env = do
-    maybeLine <- readline "tlisp>>> "
+    maybeLine <- getInputLine "tlisp>>> "
     case maybeLine of
         Nothing -> return ()
         Just line -> do
             let trimmedLine = dropWhile isSpace line
             if not $ null trimmedLine
             then do
-                addHistory trimmedLine
                 case trimmedLine of
                     (':':command) -> do
-                        continue <- handleCommand env command
+                        continue <- liftIO $ handleCommand env command
                         when continue $ replLoop env
-                    _ -> evalAndPrint env trimmedLine >>= replLoop
+                    _ -> liftIO (evalAndPrint env trimmedLine) >>= replLoop
             else
                 replLoop env
 
