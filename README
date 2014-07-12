@@ -6,8 +6,6 @@ To build, use cabal:
 
 $ cabal sandbox init
 $ cabal install --only-dependencies --enable-tests
-#if you're on a mac, use libeditline instead of libreadline
-#$ cabal install -flibeditline --only-dependencies --enable-tests
 $ cabal configure --enable-tests
 $ cabal build
 
@@ -25,7 +23,7 @@ Interesting features, beyond those in write-yourself-a-scheme:
 
 *: native support for integers, rationals, floating point and complex numbers
 *: arithmetic operations perform type promotion between the numerical types
-*: uses libreadline (or libeditline on OSX) for the repl
+*: uses haskeline for command history in the repl
 *: has doctest tests for the parser
 *: uses stateT to hold the environment
 
