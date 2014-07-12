@@ -3,7 +3,7 @@ module LispEnvironment where
 import LispVals
 
 import Control.Monad (liftM, mapM)
-import Control.Monad.State (get, put, runStateT)
+import Control.Monad.State (get, put, runState, runStateT)
 import Control.Monad.State.Class (MonadState)
 import Control.Monad.Error (ErrorT, runErrorT, throwError, MonadError, catchError)
 import Control.Monad.Error.Class (MonadError)
@@ -16,7 +16,16 @@ envFromList = M.fromList
 envToList :: Env -> [(String, LispVal)]
 envToList = M.toList
 
-liftThrows :: ThrowsError a -> IOThrowsError a
+liftEnvThrows :: (MonadError LispError m, MonadState Env m) => EnvThrowsError a -> m a
+liftEnvThrows action = do
+    env <- get
+    let (a, s) = runState (runErrorT action) env
+    put s
+    case a of
+        Left err -> throwError err
+        Right val -> return val
+
+liftThrows :: (MonadError LispError m) => ThrowsError a -> m a
 liftThrows (Left err) = throwError err
 liftThrows (Right val) = return val
 
