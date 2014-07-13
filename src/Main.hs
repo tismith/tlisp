@@ -13,7 +13,7 @@ import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)
 import Control.Monad (liftM, when)
 import System.Console.Haskeline (InputT, runInputT, getInputLine, defaultSettings, setComplete, Completion, CompletionFunc)
-import System.Console.Haskeline.Completion (completeWord, completeQuotedWord, simpleCompletion, noCompletion)
+import System.Console.Haskeline.Completion (completeWord, completeQuotedWord, simpleCompletion)
 import Data.Char (isSpace)
 import Data.List (isPrefixOf)
 

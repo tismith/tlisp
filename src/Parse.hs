@@ -3,6 +3,7 @@ module Parse where
 import LispVals
 
 import Control.Monad (liftM, join)
+import Text.ParserCombinators.Parsec.Prim (unexpected)
 import Text.ParserCombinators.Parsec (
     char
     , try
@@ -53,7 +54,8 @@ parseString = do
             '\\' -> return "\\"
             't' -> return "\t"
             'n' -> return "\n"
-            'r' -> return "\r")
+            'r' -> return "\r"
+            c -> unexpected [c])
     char '\"'
     return $ String $ join x
 
@@ -76,9 +78,10 @@ parseBool :: Parser LispVal
 parseBool = try $ do
     char '#'
     x <- oneOf "tf"
-    return $ case x of
-        't' -> Bool True
-        'f' -> Bool False
+    case x of
+        't' -> return $ Bool True
+        'f' -> return $ Bool False
+        c -> unexpected [c]
 
 -- |
 -- >>> parse parseSignedNumber "lisp" "+#x123"
@@ -105,14 +108,15 @@ parseSignedNumber :: Parser LispVal
 parseSignedNumber = try $ do
     signChar <- oneOf "+-"
     let sign = case signChar of
-                '+' -> 1 :: Integer
-                '-' -> -1
+                '-' -> -1 :: Integer
+                _ -> 1
     ureal <- parseComplex <|> parseRatio <|> parseFloat <|> parsePrefixNumber <|> parseDecimal
-    return $ case ureal of
-                Ratio r -> Ratio (r * (fromIntegral sign))
-                Complex (r :+ i) -> Complex $ (fromIntegral sign * r) :+ i
-                Float f -> Float $ (fromIntegral sign) * f
-                Number n -> Number $ sign * n
+    case ureal of
+                Ratio r -> return $ Ratio (r * fromIntegral sign)
+                Complex (r :+ i) -> return $ Complex $ (fromIntegral sign * r) :+ i
+                Float f -> return $ Float $ fromIntegral sign * f
+                Number n -> return $ Number $ sign * n
+                _ -> unexpected (show ureal)
 
 -- |
 -- >>> parse parseUnsignedNumber "lisp" "#x123"
@@ -184,6 +188,7 @@ parseCharLiteral = try $ do
     case cs of
         "space" -> return ' '
         "newline" -> return '\n'
+        s -> unexpected s
 
 parseFloat :: Parser LispVal
 parseFloat = try $ do
@@ -197,7 +202,7 @@ parseRatio = try $ do
     numerator <- many1 digit
     char '/'
     denominator <- many1 digit
-    return $ Ratio $ (read numerator) % (read denominator)
+    return $ Ratio $ read numerator % read denominator
 
 -- |
 -- >>> parse parseComplex "lisp" "3.2+2i"
@@ -209,34 +214,33 @@ parseRatio = try $ do
 -- >>> parse parseComplex "lisp" "-2i"
 -- Right 0.0-2.0i
 parseComplex :: Parser LispVal
-parseComplex = parseImaginary <|> (try $ do
+parseComplex = parseImaginary <|> try (do
     real <- many1 digit
-    realFrac <- (char '.' >> many1 digit) <|> (return "0")
+    realFrac <- (char '.' >> many1 digit) <|> return "0"
     sign <- oneOf "+-"
     complex <- many digit
-    complexFrac <- (char '.' >> many1 digit) <|> (return "0")
+    complexFrac <- (char '.' >> many1 digit) <|> return "0"
     char 'i'
     let okComplex = case complex of
                         [] -> "1"
                         _ -> complex
-    return $ Complex $ ((fst . head . readFloat) (real ++ "." ++ realFrac) :+
-                        ((fst . head . readFloat) (okComplex ++ "." ++ complexFrac)) * case sign of
+    return $ Complex  ((fst . head . readFloat) (real ++ "." ++ realFrac) :+
+                        (fst . head . readFloat) (okComplex ++ "." ++ complexFrac) * case sign of
                             '-' -> -1
-                            '+' -> 1))
+                            _ -> 1))
 
 parseImaginary :: Parser LispVal
 parseImaginary = try $ do
     sign <- (oneOf "+-" >>= \s -> return [s]) <|> return ""
     complex <- many1 digit
-    complexFrac <- (char '.' >> many1 digit) <|> (return "0")
+    complexFrac <- (char '.' >> many1 digit) <|> return "0"
     char 'i'
     let okComplex = case complex of
                         [] -> "1"
                         _ -> complex
-    return $ Complex $ (0.0 :+ ((fst . head . readFloat) (okComplex ++ "." ++ complexFrac)) * case sign of
-                            [] -> 1
+    return $ Complex (0.0 :+ (fst . head . readFloat) (okComplex ++ "." ++ complexFrac) * case sign of
                             ('-':_) -> -1
-                            ('+':_) -> 1)
+                            _ -> 1)
 
 -- |
 -- >>> parse parseList "lisp" "1 2 3"
@@ -277,7 +281,7 @@ parseQuasiQuoted = do
 parseVector :: Parser LispVal
 parseVector = try $ do
     string "#("
-    many (space)
+    many space
     x <- sepEndBy parseExpr spaces
     string ")"
     return $ Vector $ V.fromList x
@@ -285,7 +289,7 @@ parseVector = try $ do
 parseBracketedParser :: Parser LispVal -> Parser LispVal
 parseBracketedParser p = try $ do
     char '('
-    many (space)
+    many space
     x <- p
     char ')'
     return x
@@ -379,8 +383,8 @@ parseExpr = parseString
     <|> parseQuasiQuoted
     <|> parseUnquoted
     <|> parseVector
-    <|> parseBracketedParser (parseList)
-    <|> parseBracketedParser (parseDottedList)
+    <|> parseBracketedParser parseList
+    <|> parseBracketedParser parseDottedList
 
 readExpr :: String -> ThrowsError LispVal
 readExpr = readOrThrow parseExpr
