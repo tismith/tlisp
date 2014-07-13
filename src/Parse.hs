@@ -219,11 +219,11 @@ parseComplex = parseImaginary <|> try (do
     realFrac <- (char '.' >> many1 digit) <|> return "0"
     sign <- oneOf "+-"
     complex <- many digit
-    complexFrac <- (char '.' >> many1 digit) <|> return "0"
-    char 'i'
     let okComplex = case complex of
                         [] -> "1"
                         _ -> complex
+    complexFrac <- (char '.' >> many1 digit) <|> return "0"
+    char 'i'
     return $ Complex  ((fst . head . readFloat) (real ++ "." ++ realFrac) :+
                         (fst . head . readFloat) (okComplex ++ "." ++ complexFrac) * case sign of
                             '-' -> -1

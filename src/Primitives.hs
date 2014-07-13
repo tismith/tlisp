@@ -13,6 +13,7 @@ import Data.Ratio (Ratio, (%))
 import Data.Complex (Complex((:+)))
 import Data.Char (toLower)
 import System.IO (IOMode(ReadMode, WriteMode), hPrint, hClose, openFile, stdin, stdout, hGetLine)
+import Data.Function (on)
 
 ioPrimitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
 ioPrimitives = [("open-input-file", makePort ReadMode),
@@ -41,15 +42,15 @@ primitives = [("+", anyNumListOp (+)),
               ("&&", boolBoolBinop (&&)),
               ("||", boolBoolBinop (||)),
               ("string=?", strBoolBinop (==)),
-              ("string-ci=?", strBoolBinop (\x y -> (map (toLower) x) == (map (toLower) y))),
+              ("string-ci=?", strBoolBinop (on (==) (map toLower))),
               ("string<=?", strBoolBinop (<=)),
-              ("string-ci<=?", strBoolBinop (\x y -> (map (toLower) x) <= (map (toLower) y))),
+              ("string-ci<=?", strBoolBinop (on (<=) (map toLower))),
               ("string>=?", strBoolBinop (>=)),
-              ("string-ci>=?", strBoolBinop (\x y -> (map (toLower) x) >= (map (toLower) y))),
+              ("string-ci>=?", strBoolBinop (on (>=) (map toLower))),
               ("string<?", strBoolBinop (<)),
-              ("string-ci<?", strBoolBinop (\x y -> (map (toLower) x) < (map (toLower) y))),
+              ("string-ci<?", strBoolBinop (on (<) (map toLower))),
               ("string>?", strBoolBinop (>)),
-              ("string-ci>?", strBoolBinop (\x y -> (map (toLower) x) > (map (toLower) y))),
+              ("string-ci>?", strBoolBinop (on (>) (map toLower))),
               ("car", car),
               ("cdr", cdr),
               ("cons", cons),
@@ -330,7 +331,9 @@ boolBinop unpacker op args = if length args /= 2
                                      right <- unpacker $ args !! 1
                                      return $ Bool $ left `op` right
 
+strBoolBinop :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
 strBoolBinop = boolBinop unpackStr
+boolBoolBinop :: (Bool -> Bool -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBoolBinop = boolBinop unpackBool
 
 unpackChar :: LispVal -> ThrowsError Char
@@ -435,8 +438,8 @@ equal :: [LispVal] -> ThrowsError LispVal
 equal [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) &&
                                                     (and $ map eqvPair $ zip arg1 arg2)
     where eqvPair (x1, x2) = case equal [x1, x2] of
-                               Left err -> False
                                Right (Bool val) -> val
+                               _ -> False
 equal [arg1, arg2] = do
     primitiveEquals <- liftM or $ mapM (unpackEquals arg1 arg2)
                       [AnyEqUnpacker unpackNum, AnyEqUnpacker unpackRatio, AnyEqUnpacker unpackFloat,
@@ -447,6 +450,8 @@ equal badArgList = throwError $ NumArgs 2 badArgList
 
 makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
 makePort mode [String filename] = liftM Port $ liftIO $ openFile filename mode
+makePort _ [e] = throwError $ TypeMismatch "string" e
+makePort _ e = throwError $ NumArgs 1 e
 
 closePort :: [LispVal] -> IOThrowsError LispVal
 closePort [Port port] = liftIO $ hClose port >> (return $ Bool True)
@@ -454,17 +459,25 @@ closePort _ = return $ Bool False
 
 readProc :: [LispVal] -> IOThrowsError LispVal
 readProc [] = readProc [Port stdin]
-readProc [Port port] = (liftIO $ hGetLine stdin) >>= liftThrows . readExpr
+readProc [Port _] = (liftIO $ hGetLine stdin) >>= liftThrows . readExpr
+readProc [e] = throwError $ TypeMismatch "port" e
+readProc e = throwError $ NumArgs 1 e
 
 writeProc :: [LispVal] -> IOThrowsError LispVal
 writeProc [obj] = writeProc [obj, Port stdout]
 writeProc [obj, Port port] = liftIO $ hPrint port obj >> (return $ Bool True)
+writeProc [_, e] = throwError $ TypeMismatch "port" e
+writeProc e = throwError $ NumArgs 2 e
 
 readContents :: [LispVal] -> IOThrowsError LispVal
 readContents [String filename] = liftM String $ liftIO $ readFile filename
+readContents [e] = throwError $ TypeMismatch "string" e
+readContents e = throwError $ NumArgs 1 e
 
 readAll :: [LispVal] -> IOThrowsError LispVal
 readAll [String filename] = liftM List $ load filename
+readAll [e] = throwError $ TypeMismatch "string" e
+readAll e = throwError $ NumArgs 1 e
 
 load :: String -> IOThrowsError [LispVal]
 load filename = (liftIO $ readFile filename) >>= liftThrows . readExprList
