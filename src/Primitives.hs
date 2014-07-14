@@ -7,12 +7,12 @@ import LispEnvironment
 import Parse
 
 import Control.Monad.Trans (liftIO)
-import Control.Monad (liftM, foldM)
+import Control.Monad (liftM, foldM, zipWithM)
 import Control.Monad.Error (throwError, catchError)
 import Data.Ratio (Ratio, (%))
 import Data.Complex (Complex((:+)))
 import Data.Char (toLower)
-import System.IO (IOMode(ReadMode, WriteMode), hPrint, hClose, openFile, stdin, stdout, hGetLine)
+import System.IO (IOMode(ReadMode, WriteMode), hPrint, hClose, openFile, stdin, stdout)
 import Data.Function (on)
 
 ioPrimitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
@@ -57,22 +57,22 @@ primitives = [("+", anyNumListOp (+)),
               ("eq?", eqv),
               ("eqv?", eqv),
               ("equal?", equal),
-              ("string?", isLispValTest (isLispValString)),
-              ("exact?", isLispValTest (isLispValExact)),
+              ("string?", isLispValTest isLispValString),
+              ("exact?", isLispValTest isLispValExact),
               ("inexact?", isLispValTest (not . isLispValExact)),
-              ("boolean?", isLispValTest (isLispValBool)),
-              ("number?", isLispValTest (isLispValNum)),
-              ("complex?", isLispValTest (isLispValComplex)),
-              ("real?", isLispValTest (isLispValReal)),
-              ("rational?", isLispValTest (isLispValRational)),
-              ("integer?", isLispValTest (isLispValInteger)),
-              ("vector?", isLispValTest (isLispValVector)),
-              ("char?", isLispValTest (isLispValChar)),
+              ("boolean?", isLispValTest isLispValBool),
+              ("number?", isLispValTest isLispValNum),
+              ("complex?", isLispValTest isLispValComplex),
+              ("real?", isLispValTest isLispValReal),
+              ("rational?", isLispValTest isLispValRational),
+              ("integer?", isLispValTest isLispValInteger),
+              ("vector?", isLispValTest isLispValVector),
+              ("char?", isLispValTest isLispValChar),
               ("port?", undefined),
               ("procedure?", undefined),
-              ("pair?", isLispValTest (isLispValDottedList)),
-              ("symbol?", isLispValTest (isLispValAtom)),
-              ("list?", isLispValTest (isLispValList)),
+              ("pair?", isLispValTest isLispValDottedList),
+              ("symbol?", isLispValTest isLispValAtom),
+              ("list?", isLispValTest isLispValList),
               ("symbol->string", symbolToString),
               ("string->symbol", stringToSymbol),
               ("make-string", makeString),
@@ -93,19 +93,19 @@ stringCopy e = throwError $ NumArgs 1 e
 listToString :: [LispVal] -> ThrowsError LispVal
 listToString (l:[]) = do
     cs <- unpackList l
-    rawChars <- mapM (unpackChar) cs
+    rawChars <- mapM unpackChar cs
     return $ String rawChars
 listToString e = throwError $ NumArgs 1 e
 
 stringToList :: [LispVal] -> ThrowsError LispVal
 stringToList (s:[]) = do
     rawString <- unpackStr s
-    return $ List $ map (Char) rawString
+    return $ List $ map Char rawString
 stringToList e = throwError $ NumArgs 1 e
 
 stringAppend :: [LispVal] -> ThrowsError LispVal
 stringAppend ss@(_:_) = do
-    rawStrings <- mapM (unpackStr) ss
+    rawStrings <- mapM unpackStr ss
     return $ String $ concat rawStrings
 stringAppend e = throwError $ NumArgs 1 e
 
@@ -121,23 +121,23 @@ stringRef :: [LispVal] -> ThrowsError LispVal
 stringRef (s:k:[]) = do
     rawString <- unpackStr s
     rawIndex <- unpackNum k
-    return $ Char (rawString !! (fromIntegral rawIndex))
+    return $ Char (rawString !! fromIntegral rawIndex)
 stringRef e = throwError $ NumArgs 2 e
 
 makeString :: [LispVal] -> ThrowsError LispVal
 makeString (k:[]) = do
     size <- unpackNum k
-    return $ String (take (fromIntegral size) $ repeat '.')
+    return $ String (replicate (fromIntegral size) '.')
 makeString (k:c:[]) = do
     size <- unpackNum k
     character <- unpackChar c
-    return $ String (take (fromIntegral size) $ repeat character)
+    return $ String (replicate (fromIntegral size) character)
 makeString e = throwError $ NumArgs 2 e
 
 charsToString :: [LispVal] -> ThrowsError LispVal
 charsToString [] = throwError $ NumArgs 1 []
 charsToString chars = do
-    newString <- mapM (unpackChar) chars
+    newString <- mapM unpackChar chars
     return $ String newString
 
 isLispValExact :: LispVal -> Bool
@@ -146,12 +146,12 @@ isLispValExact (Ratio _) = True
 isLispValExact _ = False
 
 stringToSymbol :: [LispVal] -> ThrowsError LispVal
-stringToSymbol ((String s):[]) = return $ Atom s
+stringToSymbol (String s:[]) = return $ Atom s
 stringToSymbol (e:[]) = throwError $ TypeMismatch "string" e
 stringToSymbol e = throwError $ NumArgs 1 e
 
 symbolToString :: [LispVal] -> ThrowsError LispVal
-symbolToString ((Atom s):[]) = return $ String s
+symbolToString (Atom s:[]) = return $ String s
 symbolToString (e:[]) = throwError $ TypeMismatch "symbol" e
 symbolToString e = throwError $ NumArgs 1 e
 
@@ -226,19 +226,19 @@ onlyNumBinOp _ (Number _) e = throwError $ TypeMismatch "integral" e
 onlyNumBinOp _ e _ = throwError $ TypeMismatch "integral" e
 
 anyNumListDiv :: [LispVal] -> ThrowsError LispVal
-anyNumListDiv (l:ls@(_:_)) = foldM (anyNumBinDiv) l ls
+anyNumListDiv (l:ls@(_:_)) = foldM anyNumBinDiv l ls
 anyNumListDiv (l:[]) = anyNumBinDiv (Float 1.0) l
 anyNumListDiv badArgList = throwError $ NumArgs 1 badArgList
 
 anyNumBinDiv :: LispVal -> LispVal -> ThrowsError LispVal
 anyNumBinDiv (Number a) (Number b) = return $ Number (div a b)
-anyNumBinDiv (Number a) (Float b) = return $ Float ((fromIntegral a) / b)
+anyNumBinDiv (Number a) (Float b) = return $ Float (fromIntegral a / b)
 anyNumBinDiv (Number a) (Complex b) = return $ Complex ((fromIntegral a :+ 0) / b)
 anyNumBinDiv (Number a) (Ratio b) = return $ Ratio ((a % 1) / b)
-anyNumBinDiv (Float a) (Number b) = return $ Float (a / (fromIntegral b))
+anyNumBinDiv (Float a) (Number b) = return $ Float (a / fromIntegral b)
 anyNumBinDiv (Float a) (Float b) = return $ Float (a / b)
 anyNumBinDiv (Float a) (Complex b) = return $ Complex ((a :+ 0) / b)
-anyNumBinDiv (Float a) (Ratio b) = return $ Float (a / (fromRational b))
+anyNumBinDiv (Float a) (Ratio b) = return $ Float (a / fromRational b)
 anyNumBinDiv (Complex a) (Number b) = return $ Complex (a / (fromIntegral b :+ 0))
 anyNumBinDiv (Complex a) (Float b) = return $ Complex (a / (b :+ 0))
 anyNumBinDiv (Complex a) (Complex b) = return $ Complex (a / b)
@@ -279,8 +279,8 @@ anyNumBinOp _ e _ = throwError $ TypeMismatch "number" e
 
 anyEqBoolListOp :: (forall a. Eq a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 anyEqBoolListOp f ls@(_:_:_) = do
-                    sequencedLispBools <- sequence $ zipWith (anyEqBoolBinOp f) ls (drop 1 ls)
-                    sequencedBools <- sequence $ map (unpackBool) sequencedLispBools
+                    sequencedLispBools <- zipWithM (anyEqBoolBinOp f) ls (drop 1 ls)
+                    sequencedBools <- mapM unpackBool sequencedLispBools
                     return $ Bool $ and sequencedBools
 anyEqBoolListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
@@ -305,8 +305,8 @@ anyEqBoolBinOp _ e _ = throwError $ TypeMismatch "number" e
 
 anyOrdBoolListOp :: (forall a. Ord a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 anyOrdBoolListOp f ls@(_:_:_) = do
-                    sequencedLispBools <- sequence $ zipWith (anyOrdBoolBinOp f) ls (drop 1 ls)
-                    sequencedBools <- sequence $ map (unpackBool) sequencedLispBools
+                    sequencedLispBools <- zipWithM (anyOrdBoolBinOp f) ls (drop 1 ls)
+                    sequencedBools <- mapM unpackBool sequencedLispBools
                     return $ Bool $ and sequencedBools
 anyOrdBoolListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
@@ -327,7 +327,7 @@ anyOrdBoolBinOp _ e _ = throwError $ TypeMismatch "number" e
 boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBinop unpacker op args = if length args /= 2
                              then throwError $ NumArgs 2 args
-                             else do left <- unpacker $ args !! 0
+                             else do left <- unpacker $ head args
                                      right <- unpacker $ args !! 1
                                      return $ Bool $ left `op` right
 
@@ -351,9 +351,9 @@ unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
 unpackComplex :: LispVal -> ThrowsError (Complex Float)
 unpackComplex (Complex n) = return n
-unpackComplex (Number n) = return ((fromIntegral n) :+ 0)
+unpackComplex (Number n) = return (fromIntegral n :+ 0)
 unpackComplex (Float n) = return (n :+ 0)
-unpackComplex (Ratio n) = return ((fromRational n) :+ 0)
+unpackComplex (Ratio n) = return (fromRational n :+ 0)
 unpackComplex (List [n]) = unpackComplex n
 unpackComplex notNum = throwError $ TypeMismatch "number" notNum
 
@@ -402,22 +402,22 @@ cdr badArgList = throwError $ NumArgs 1 badArgList
 
 cons :: [LispVal] -> ThrowsError LispVal
 cons [x1, List []] = return $ List [x1]
-cons [x, List xs] = return $ List $ [x] ++ xs
-cons [x, DottedList xs xlast] = return $ DottedList ([x] ++ xs) xlast
+cons [x, List xs] = return $ List $ x : xs
+cons [x, DottedList xs xlast] = return $ DottedList (x : xs) xlast
 cons [x1, x2] = return $ DottedList [x1] x2
 cons badArgList = throwError $ NumArgs 2 badArgList
 
 eqv :: [LispVal] -> ThrowsError LispVal
-eqv [(Bool arg1), (Bool arg2)] = return $ Bool $ arg1 == arg2
-eqv [(Number arg1), (Number arg2)] = return $ Bool $ arg1 == arg2
-eqv [(Ratio arg1), (Ratio arg2)] = return $ Bool $ arg1 == arg2
-eqv [(Float arg1), (Float arg2)] = return $ Bool $ arg1 == arg2
-eqv [(Complex arg1), (Complex arg2)] = return $ Bool $ arg1 == arg2
-eqv [(String arg1), (String arg2)] = return $ Bool $ arg1 == arg2
-eqv [(Atom arg1), (Atom arg2)] = return $ Bool $ arg1 == arg2
-eqv [(DottedList xs x), (DottedList ys y)] = eqv [List $ xs ++ [x], List $ ys ++ [y]]
-eqv [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) &&
-                                                    (and $ map eqvPair $ zip arg1 arg2)
+eqv [Bool arg1, Bool arg2] = return $ Bool $ arg1 == arg2
+eqv [Number arg1, Number arg2] = return $ Bool $ arg1 == arg2
+eqv [Ratio arg1, Ratio arg2] = return $ Bool $ arg1 == arg2
+eqv [Float arg1, Float arg2] = return $ Bool $ arg1 == arg2
+eqv [Complex arg1, Complex arg2] = return $ Bool $ arg1 == arg2
+eqv [String arg1, String arg2] = return $ Bool $ arg1 == arg2
+eqv [Atom arg1, Atom arg2] = return $ Bool $ arg1 == arg2
+eqv [DottedList xs x, DottedList ys y] = eqv [List $ xs ++ [x], List $ ys ++ [y]]
+eqv [List arg1, List arg2] = return $ Bool $ (length arg1 == length arg2) &&
+                                                    all eqvPair (zip arg1 arg2)
     where eqvPair (x1, x2) = case eqv [x1, x2] of
                                Left _ -> False
                                Right (Bool val) -> val
@@ -432,11 +432,11 @@ unpackEquals arg1 arg2 (AnyEqUnpacker unpacker) =
              do unpacked1 <- unpacker arg1
                 unpacked2 <- unpacker arg2
                 return $ unpacked1 == unpacked2
-        `catchError` (const $ return False)
+        `catchError` const (return False)
 
 equal :: [LispVal] -> ThrowsError LispVal
-equal [(List arg1), (List arg2)] = return $ Bool $ (length arg1 == length arg2) &&
-                                                    (and $ map eqvPair $ zip arg1 arg2)
+equal [List arg1, List arg2] = return $ Bool $ (length arg1 == length arg2) &&
+                                                    all eqvPair (zip arg1 arg2)
     where eqvPair (x1, x2) = case equal [x1, x2] of
                                Right (Bool val) -> val
                                _ -> False
@@ -445,7 +445,7 @@ equal [arg1, arg2] = do
                       [AnyEqUnpacker unpackNum, AnyEqUnpacker unpackRatio, AnyEqUnpacker unpackFloat,
                         AnyEqUnpacker unpackComplex, AnyEqUnpacker unpackCoerceStr, AnyEqUnpacker unpackBool]
     eqvEquals <- eqv [arg1, arg2]
-    return $ Bool $ (primitiveEquals || let (Bool x) = eqvEquals in x)
+    return $ Bool (primitiveEquals || let (Bool x) = eqvEquals in x)
 equal badArgList = throwError $ NumArgs 2 badArgList
 
 makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
@@ -454,18 +454,18 @@ makePort _ [e] = throwError $ TypeMismatch "string" e
 makePort _ e = throwError $ NumArgs 1 e
 
 closePort :: [LispVal] -> IOThrowsError LispVal
-closePort [Port port] = liftIO $ hClose port >> (return $ Bool True)
+closePort [Port port] = liftIO $ hClose port >> return (Bool True)
 closePort _ = return $ Bool False
 
 readProc :: [LispVal] -> IOThrowsError LispVal
 readProc [] = readProc [Port stdin]
-readProc [Port _] = (liftIO $ hGetLine stdin) >>= liftThrows . readExpr
+readProc [Port _] = liftIO getLine >>= liftThrows . readExpr
 readProc [e] = throwError $ TypeMismatch "port" e
 readProc e = throwError $ NumArgs 1 e
 
 writeProc :: [LispVal] -> IOThrowsError LispVal
 writeProc [obj] = writeProc [obj, Port stdout]
-writeProc [obj, Port port] = liftIO $ hPrint port obj >> (return $ Bool True)
+writeProc [obj, Port port] = liftIO $ hPrint port obj >> return (Bool True)
 writeProc [_, e] = throwError $ TypeMismatch "port" e
 writeProc e = throwError $ NumArgs 2 e
 
@@ -480,4 +480,4 @@ readAll [e] = throwError $ TypeMismatch "string" e
 readAll e = throwError $ NumArgs 1 e
 
 load :: String -> IOThrowsError [LispVal]
-load filename = (liftIO $ readFile filename) >>= liftThrows . readExprList
+load filename = liftIO (readFile filename) >>= liftThrows . readExprList

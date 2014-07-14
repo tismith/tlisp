@@ -4,10 +4,8 @@ import Primitives
 import LispVals
 import LispEnvironment
 
-import Control.Monad.Trans (liftIO)
 import Control.Monad (liftM)
 import Control.Monad.Error (throwError, MonadError)
-import Control.Monad.State (MonadState)
 
 eval :: LispVal -> IOThrowsError LispVal
 eval val@(String _) = return val
@@ -18,7 +16,7 @@ eval val@(Ratio _) = return val
 eval val@(Float _) = return val
 eval val@(Char _) = return val
 eval val@(Vector _) = return val
-eval (Atom id) = getVar id
+eval (Atom i) = getVar i
 eval (List [Atom "quote", val]) = return val
 eval e@(List [Atom "quasiquote", val]) = throwError $ BadSpecialForm "Quasiquotes not implemented" e
 eval e@(List [Atom "unquote", val]) = throwError $ BadSpecialForm "Unquotes not implemented" e
@@ -87,7 +85,7 @@ chainEvalClause :: (LispVal -> IOThrowsError (Maybe LispVal)) -> IOThrowsError (
 chainEvalClause evalFunc evalC unevalC = do
                         clause <- evalC
                         case clause of
-                            Just l -> return clause
+                            Just _ -> return clause
                             Nothing -> evalFunc unevalC
 
 evalCaseClause :: LispVal -> LispVal -> IOThrowsError (Maybe LispVal)
