@@ -4,11 +4,10 @@ import Primitives
 import LispVals
 import LispEnvironment
 
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans (liftIO)
 import Control.Monad (liftM)
-import Control.Monad.Error (throwError)
-import Control.Monad.Error.Class (MonadError)
-import Control.Monad.State.Class (MonadState)
+import Control.Monad.Error (throwError, MonadError)
+import Control.Monad.State (MonadState)
 
 eval :: LispVal -> IOThrowsError LispVal
 eval val@(String _) = return val

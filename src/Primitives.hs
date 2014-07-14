@@ -6,7 +6,7 @@ import LispVals
 import LispEnvironment
 import Parse
 
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans (liftIO)
 import Control.Monad (liftM, foldM)
 import Control.Monad.Error (throwError, catchError)
 import Data.Ratio (Ratio, (%))

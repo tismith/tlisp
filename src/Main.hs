@@ -5,8 +5,7 @@ import LispVals
 import Primitives
 import LispEnvironment
 
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans (lift, liftIO)
 -- need the strict state monad for monadexception
 import Control.Monad.State.Strict (StateT, put, get, evalStateT)
 import System.IO (hPutStrLn, stderr)

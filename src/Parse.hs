@@ -3,8 +3,8 @@ module Parse where
 import LispVals
 
 import Control.Monad (liftM, join)
-import Text.ParserCombinators.Parsec.Prim (unexpected)
 import Text.ParserCombinators.Parsec (
+    unexpected,
     char
     , try
     , (<|>)
