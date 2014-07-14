@@ -1,4 +1,11 @@
-module LispVals where
+module LispVals (
+    Env,
+    ThrowsError,
+    EnvThrowsError,
+    IOThrowsError,
+    LispVal(..),
+    LispError(..)
+  ) where
 
 import Data.Ratio (Ratio, numerator, denominator)
 import Data.Complex (Complex((:+)))

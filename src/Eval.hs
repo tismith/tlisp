@@ -151,13 +151,13 @@ apply e _ = throwError $ TypeMismatch "function" e
 makeFunc :: Maybe String -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
 makeFunc varargs params body = do
     env <- getEnv
-    return $ Func (map showVal params) varargs body env
+    return $ Func (map show params) varargs body env
 
 makeNormalFunc :: [LispVal] -> [LispVal] -> IOThrowsError LispVal
 makeNormalFunc = makeFunc Nothing
 
 makeVarargs :: LispVal -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
-makeVarargs = makeFunc . Just . showVal
+makeVarargs = makeFunc . Just . show
 
 applyProc :: [LispVal] -> IOThrowsError LispVal
 applyProc [func, List args] = apply func args
