@@ -41,4 +41,4 @@ test-suite doctests
 
 source-repository head
     type: git
-    location: https://github.com/tismith/write-yourself-a-scheme
+    location: https://github.com/tismith/tlisp
