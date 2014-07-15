@@ -1,5 +1,19 @@
 {-# LANGUAGE FlexibleContexts #-}
-module LispEnvironment where
+module LispEnvironment (
+    envSymbols,
+    envFromList,
+    envToList,
+    liftThrows,
+    liftEnvThrows,
+    runIOThrows,
+    getEnv,
+    putEnv,
+    getVar,
+    defineVar,
+    setVar,
+    bindVars
+  ) where
+
 import LispVals
 
 import Control.Monad.State (get, put, runState, runStateT, MonadState)

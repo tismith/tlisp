@@ -1,5 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Eval where
+module Eval (eval) where
 import Primitives
 import LispVals
 import LispEnvironment

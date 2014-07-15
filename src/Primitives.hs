@@ -1,7 +1,21 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE Rank2Types #-}
-module Primitives where
+module Primitives (
+    ioPrimitives,
+    primitives,
+    unpackNum,
+    unpackFloat,
+    unpackRatio,
+    unpackComplex,
+    unpackChar,
+    unpackStr,
+    unpackCoerceStr,
+    unpackBool,
+    --these two are bit yucky to have exported
+    load,
+    eqv
+  ) where
 import LispVals
 import LispEnvironment
 import Parse

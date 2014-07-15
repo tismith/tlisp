@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
-module Parse where
+module Parse (readExpr, readExprList) where
 import LispVals
 
 import Control.Monad (liftM, join)
