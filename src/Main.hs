@@ -37,8 +37,7 @@ runOne args = do
     hPutStrLn stderr out
 
 runRepl :: IO ()
-runRepl = do
-    evalStateT (runInputT (setComplete replComplete defaultSettings) replLoop) primitiveBindings
+runRepl = evalStateT (runInputT (setComplete replComplete defaultSettings) replLoop) primitiveBindings
 
 replComplete :: CompletionFunc (StateT Env IO)
 replComplete = completeQuotedWord Nothing "\"\'" (const $ return []) symbolComplete
@@ -50,7 +49,7 @@ completeEnv :: String -> (StateT Env IO) [Completion]
 completeEnv s = do
     env <- get
     let keys = envSymbols env
-    return $ map (simpleCompletion) $ filter (isPrefixOf s) keys
+    return $ map simpleCompletion $ filter (isPrefixOf s) keys
 
 doQuit :: IO Bool
 doQuit = putStrLn "Leaving tlisp" >> return False
@@ -82,15 +81,13 @@ replLoop = do
         Just line -> do
             let trimmedLine = dropWhile isSpace line
             if not $ null trimmedLine
-            then do
-                case trimmedLine of
+            then case trimmedLine of
                     (':':command) -> do
                         env <- lift get
                         continue <- liftIO $ handleCommand env command
-                        when continue $ replLoop
+                        when continue replLoop
                     _ -> lift get >>= \e -> liftIO (evalAndPrint e trimmedLine) >>= lift . put >> replLoop
-            else
-                replLoop
+            else replLoop
 
 primitiveBindings :: Env
 primitiveBindings = envFromList (map (mF IOFunc) ioPrimitives ++ map (mF PrimitiveFunc) primitives)
