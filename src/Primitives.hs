@@ -82,8 +82,8 @@ primitives = [("+", anyNumListOp (+)),
               ("integer?", isLispValTest isLispValInteger),
               ("vector?", isLispValTest isLispValVector),
               ("char?", isLispValTest isLispValChar),
-              ("port?", undefined),
-              ("procedure?", undefined),
+              ("port?", isLispValTest isLispValPort),
+              ("procedure?", isLispValTest isLispValProcedure),
               ("pair?", isLispValTest isLispValDottedList),
               ("symbol?", isLispValTest isLispValAtom),
               ("list?", isLispValTest isLispValList),
@@ -172,6 +172,16 @@ symbolToString e = throwError $ NumArgs 1 e
 isLispValDottedList :: LispVal -> Bool
 isLispValDottedList (DottedList _ _) = True
 isLispValDottedList _ = False
+
+isLispValProcedure :: LispVal -> Bool
+isLispValProcedure (PrimitiveFunc _) = True
+isLispValProcedure (IOFunc _) = True
+isLispValProcedure (Func {})  = True
+isLispValProcedure _ = False
+
+isLispValPort :: LispVal -> Bool
+isLispValPort (Port _) = True
+isLispValPort _ = False
 
 isLispValList :: LispVal -> Bool
 isLispValList (List _) = True
