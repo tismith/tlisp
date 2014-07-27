@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
 module Eval (eval) where
 import Primitives
 import LispVals
@@ -6,7 +5,7 @@ import LispEnvironment
 
 import Control.Monad.Trans (lift)
 import Control.Monad (liftM)
-import Control.Monad.Error (throwError, MonadError)
+import Control.Monad.Error (throwError)
 import Control.Monad.Cont (callCC)
 import Data.Maybe (isNothing)
 
