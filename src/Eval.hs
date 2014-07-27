@@ -21,8 +21,8 @@ eval val@(Char _) = return val
 eval val@(Vector _) = return val
 eval (Atom i) = lift $ getVar i
 eval (List [Atom "quote", val]) = return val
-eval e@(List [Atom "quasiquote", _]) = lift $ throwError $ BadSpecialForm "Quasiquotes not implemented" e
-eval e@(List [Atom "unquote", _]) = lift $ throwError $ BadSpecialForm "Unquotes not implemented" e
+eval e@(List [Atom "quasiquote", _]) = throwError $ BadSpecialForm "Quasiquotes not implemented" e
+eval e@(List [Atom "unquote", _]) = throwError $ BadSpecialForm "Unquotes not implemented" e
 eval (List [Atom "if", p, conseq, alt]) =
     do result <- eval p
        case result of
@@ -31,42 +31,42 @@ eval (List [Atom "if", p, conseq, alt]) =
 eval (List [Atom "if", p, conseq]) =
     do result <- eval p
        case result of
-         Bool False -> lift $ throwError $ Unspecified "if without an else"
+         Bool False -> throwError $ Unspecified "if without an else"
          _ -> eval conseq
 eval (List (Atom "cond":(clause:cs))) =
     do result <- foldl (chainEvalClause evalCondClause) (evalCondClause clause) cs
        case result of
-            WrongClause -> lift . throwError $ Unspecified "no matching cond"
+            WrongClause -> throwError $ Unspecified "no matching cond"
             _ -> return result
 eval (List (Atom "case":key:clause:cs)) =
     do evalKey <- eval key
        result <- foldl (chainEvalClause (evalCaseClause evalKey)) (evalCaseClause evalKey clause) cs
        case result of
-            WrongClause -> lift . throwError $ Unspecified "no matching case"
+            WrongClause -> throwError $ Unspecified "no matching case"
             _ -> return result
 eval (List [Atom "set!", Atom var, form]) = eval form >>= lift . setVar var
 eval (List [Atom "string-set!", Atom var, i, ch]) =
     do i' <- eval i
-       index <- lift . liftThrows $ unpackNum i'
+       index <- liftThrows $ unpackNum i'
        ch' <- eval ch
-       char <- lift . liftThrows $ unpackChar ch'
-       v <- lift $ getVar var
-       str <- lift . liftThrows $ unpackStr v
+       char <- liftThrows $ unpackChar ch'
+       v <- getVar var
+       str <- liftThrows $ unpackStr v
        let (f,s) = splitAt (fromIntegral index) str
        case s of
-            [] -> lift $ throwError $ Unspecified "invalid index"
-            _ -> lift $ setVar var (String $ f ++ [char] ++ drop 1 s)
+            [] -> throwError $ Unspecified "invalid index"
+            _ -> setVar var (String $ f ++ [char] ++ drop 1 s)
 eval (List [Atom "string-fill!", Atom var, ch]) =
-    do v <- lift $ getVar var
+    do v <- getVar var
        ch' <- eval ch
-       char <- lift . liftThrows $ unpackChar ch'
-       str <- lift . liftThrows $ unpackStr v
-       lift $ setVar var (String $ map (const char) str)
-eval (List [Atom "define", Atom var, form]) = eval form >>= lift . defineVar var
+       char <- liftThrows $ unpackChar ch'
+       str <- liftThrows $ unpackStr v
+       setVar var (String $ map (const char) str)
+eval (List [Atom "define", Atom var, form]) = eval form >>= defineVar var
 eval (List (Atom "define" : List (Atom var : p) : b)) =
-    lift $ makeNormalFunc p b >>= lift . defineVar var
+    lift $ makeNormalFunc p b >>= defineVar var
 eval (List (Atom "define" : DottedList (Atom var : p) varargs : b)) =
-    lift $ makeVarargs varargs p b >>= lift . defineVar var
+    lift $ makeVarargs varargs p b >>= defineVar var
 eval (List (Atom "lambda" : List p : b)) =
     lift $ makeNormalFunc p b
 eval (List (Atom "lambda" : DottedList p varargs : b)) =
@@ -86,7 +86,7 @@ eval (List (function : args)) = do
     func <- eval function
     argVals <- mapM eval args
     apply func argVals
-eval badForm = lift $ throwError $ BadSpecialForm "Unrecognized special form" badForm
+eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 chainEvalClause :: (LispVal -> LispEval) -> LispEval -> LispVal -> LispEval
 chainEvalClause evalFunc evalC unevalC = do
@@ -101,14 +101,14 @@ evalCaseClause key (List (datums:(exprs@(_:_)))) = --exprs can't be []
         Atom "else" -> do
                 evalExprs <- mapM eval exprs
                 return $ last evalExprs
-        List l -> do success <- lift . liftThrows . liftM or $ mapM (\x -> eqv [x, key] >>= unpackBool) l
+        List l -> do success <- liftThrows . liftM or $ mapM (\x -> eqv [x, key] >>= unpackBool) l
                      if success
                         then do
                             evalExprs <- mapM eval exprs
                             return $ last evalExprs
                         else return WrongClause
-        e -> lift . throwError $ TypeMismatch "list" e
-evalCaseClause _ badForm = lift . throwError $ BadSpecialForm "Unrecognized case clause form" badForm
+        e -> throwError $ TypeMismatch "list" e
+evalCaseClause _ badForm = throwError $ BadSpecialForm "Unrecognized case clause form" badForm
 
 evalCondClause :: LispVal -> LispEval
 evalCondClause (List (test:[])) =
@@ -116,7 +116,7 @@ evalCondClause (List (test:[])) =
        case success of
             Bool True -> return success
             Bool False -> return WrongClause
-            _ -> lift . throwError $ TypeMismatch "boolean" success
+            _ -> throwError $ TypeMismatch "boolean" success
 evalCondClause (List (test:exprs)) =
     case test of
         Atom "else" -> do
@@ -128,18 +128,18 @@ evalCondClause (List (test:exprs)) =
                         evalExprs <- mapM eval exprs
                         return $ last evalExprs
                     Bool False -> return WrongClause
-                    _ -> lift . throwError $ TypeMismatch "boolean" success
-evalCondClause badForm = lift . throwError $ BadSpecialForm "Unrecognized cond clause form" badForm
+                    _ -> throwError $ TypeMismatch "boolean" success
+evalCondClause badForm = throwError $ BadSpecialForm "Unrecognized cond clause form" badForm
 
 apply :: LispVal -> [LispVal] -> LispEval
 apply (Continuation c) [arg] = c arg
-apply (Continuation _) e = lift . throwError $ NumArgs 1 e
+apply (Continuation _) e = throwError $ NumArgs 1 e
 apply (IOFunc func) args = lift $ func args
-apply (PrimitiveFunc func) args = lift . liftThrows $ func args
+apply (PrimitiveFunc func) args = liftThrows $ func args
 apply (Func ps vs b c) args = do
     originalEnv <- getEnv
     if num ps /= num args && isNothing vs
-       then lift . throwError $ NumArgs (num ps) args
+       then throwError $ NumArgs (num ps) args
        else do
         -- this is not a nice way to handle a stack frame, just splatting over
         -- the top
@@ -156,7 +156,7 @@ apply (Func ps vs b c) args = do
           bindVarArgs arg = case arg of
               Just argName -> bindVars [(argName, List remainingArgs)]
               Nothing -> return ()
-apply e _ = lift . throwError $ TypeMismatch "function" e
+apply e _ = throwError $ TypeMismatch "function" e
 
 makeFunc :: Maybe String -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
 makeFunc varargs p b = do
@@ -172,4 +172,4 @@ makeVarargs = makeFunc . Just . show
 applyProc :: [LispVal] -> LispEval
 applyProc [func, List args] = apply func args
 applyProc (func : args) = apply func args
-applyProc e = lift . throwError $ NumArgs 2 e
+applyProc e = throwError $ NumArgs 2 e

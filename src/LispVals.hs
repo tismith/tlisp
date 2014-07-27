@@ -1,3 +1,7 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module LispVals (
     Env,
     ThrowsError,
@@ -13,9 +17,10 @@ import Data.Complex (Complex((:+)))
 import qualified Data.Vector as V (toList, Vector)
 import qualified Data.Map as M (Map)
 import Text.ParserCombinators.Parsec (ParseError)
-import Control.Monad.Error (ErrorT, Error, noMsg, strMsg)
+import Control.Monad.Error (ErrorT, Error, noMsg, strMsg, MonadError, throwError, catchError)
 import Control.Monad.State (State, StateT)
-import Control.Monad.Cont (ContT)
+import Control.Monad.Cont (ContT(..), runContT)
+import Control.Monad.Trans (lift)
 import System.IO (Handle)
 
 type Env = M.Map String LispVal
@@ -30,6 +35,11 @@ type EnvThrowsError = ErrorT LispError (State Env)
 type IOThrowsError = ErrorT LispError (StateT Env IO)
 
 type LispEval = ContT LispVal IOThrowsError LispVal
+-- mtl doesn't define a MonadError instances for ContT
+-- http://stackoverflow.com/questions/10742151/why-cant-contt-be-made-an-instance-of-monaderror
+instance MonadError e m => MonadError e (ContT r m) where
+  throwError = lift . throwError
+  catchError op h = ContT $ \k -> catchError (runContT op k) (\e -> runContT (h e) k)
 
 data LispVal = Atom String
         | List [LispVal]
