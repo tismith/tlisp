@@ -6,11 +6,10 @@ import LispEnvironment
 
 import Control.Monad.Trans (lift)
 import Control.Monad (liftM)
-import Control.Monad.Cont (ContT)
 import Control.Monad.Error (throwError, MonadError)
 import Data.Maybe (isNothing)
 
-eval :: LispVal -> ContT LispVal IOThrowsError LispVal
+eval :: LispVal -> LispEval
 eval val@(String _) = return val
 eval val@(Number _) = return val
 eval val@(Bool _) = return val
@@ -28,18 +27,16 @@ eval (List [Atom "if", p, conseq, alt]) =
        case result of
          Bool False -> eval alt
          _ -> eval conseq
+eval (List [Atom "if", p, conseq]) =
+    do result <- eval p
+       case result of
+         Bool False -> lift $ throwError $ Unspecified "if without an else"
+         _ -> eval conseq
 ----------------------------------------------------
--- eval c (List [Atom "if", p, conseq]) =
---     do result <- eval c p
+-- eval (List (Atom "cond":(clause:cs))) =
+--     do result <- foldl (chainEvalClause evalCondClause) (evalCondClause clause) cs
 --        case result of
---          Bool False -> throwError $ Unspecified "if without an else"
---          _ -> eval c conseq
----------------------------------------------------- 
-----------------------------------------------------
--- eval c (List (Atom "cond":(clause:cs))) =
---     do result <- foldl (chainEvalClause c evalCondClause) (evalCondClause clause) cs
---        case result of
---             Just l -> c l
+--             Just l -> return l
 --             Nothing -> throwError $ Unspecified "no matching cond"
 -- eval c (List (Atom "case":key:clause:cs)) =
 --     do evalKey <- eval c key
@@ -67,31 +64,25 @@ eval (List [Atom "string-fill!", Atom var, ch]) =
        str <- lift . liftThrows $ unpackStr v
        lift $ setVar var (String $ map (const char) str)
 eval (List [Atom "define", Atom var, form]) = eval form >>= lift . defineVar var
-----------------------------------------------------
--- eval c (List (Atom "define" : List (Atom var : p) : b)) =
---     makeNormalFunc p b >>= defineVar var >>= c
--- eval c (List (Atom "define" : DottedList (Atom var : p) varargs : b)) =
---     makeVarargs varargs p b >>= defineVar var >>= c
--- eval c (List (Atom "lambda" : List p : b)) =
---     makeNormalFunc p b >>= c
--- eval c (List (Atom "lambda" : DottedList p varargs : b)) =
---     makeVarargs varargs p b >>= c
--- eval c (List (Atom "lambda" : varargs@(Atom _) : b)) =
---     makeVarargs varargs [] b >>= c
----------------------------------------------------- 
-----------------------------------------------------
--- eval c (List (Atom "apply" : args)) = do
---     argVals <- mapM eval args
---     applyProc argVals >>= c
--- eval c (List [Atom "load", String filename]) =
---     load filename >>= liftM last . mapM eval >>= c
----------------------------------------------------- 
-----------------------------------------------------
--- eval c (List (function : args)) = do
---     func <- eval c function
---     argVals <- mapM (eval c) args
---     apply func argVals >>= c
----------------------------------------------------- 
+eval (List (Atom "define" : List (Atom var : p) : b)) =
+    lift $ makeNormalFunc p b >>= lift . defineVar var
+eval (List (Atom "define" : DottedList (Atom var : p) varargs : b)) =
+    lift $ makeVarargs varargs p b >>= lift . defineVar var
+eval (List (Atom "lambda" : List p : b)) =
+    lift $ makeNormalFunc p b
+eval (List (Atom "lambda" : DottedList p varargs : b)) =
+    lift $ makeVarargs varargs p b
+eval (List (Atom "lambda" : varargs@(Atom _) : b)) =
+    lift $ makeVarargs varargs [] b
+eval (List (Atom "apply" : args)) = do
+    argVals <- mapM eval args
+    applyProc argVals
+eval (List [Atom "load", String filename]) =
+    (lift . load) filename >>= liftM last . mapM eval
+eval (List (function : args)) = do
+    func <- eval function
+    argVals <- mapM eval args
+    apply func argVals
 eval badForm = lift $ throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 ----------------------------------------------------
@@ -138,45 +129,44 @@ eval badForm = lift $ throwError $ BadSpecialForm "Unrecognized special form" ba
 --                     _ -> throwError $ TypeMismatch "boolean" success
 -- evalCondClause badForm = throwError $ BadSpecialForm "Unrecognized cond clause form" badForm
 -- 
--- apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
--- apply (IOFunc func) args = func args
--- apply (PrimitiveFunc func) args = liftThrows $ func args
--- apply (Func ps vs b c) args = do
---     originalEnv <- getEnv
---     if num ps /= num args && isNothing vs
---        then throwError $ NumArgs (num ps) args
---        else do
---         -- this is not a nice way to handle a stack frame, just splatting over
---         -- the top
---         bindVars $ envToList c
---         bindVars $ zip ps args
---         bindVarArgs vs
---         r <- evalBody
---         -- and then manually unwinding it
---         putEnv originalEnv
---         return r
---     where remainingArgs = drop (length ps) args
---           num = toInteger . length
---           evalBody = liftM last $ mapM eval b
---           bindVarArgs arg = case arg of
---               Just argName -> bindVars [(argName, List remainingArgs)]
---               Nothing -> return ()
--- apply e _ = throwError $ TypeMismatch "function" e
--- 
--- makeFunc :: Maybe String -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
--- makeFunc varargs p b = do
---     env <- getEnv
---     return $ Func (map show p) varargs b env
--- 
--- makeNormalFunc :: [LispVal] -> [LispVal] -> IOThrowsError LispVal
--- makeNormalFunc = makeFunc Nothing
--- 
--- makeVarargs :: LispVal -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
--- makeVarargs = makeFunc . Just . show
--- 
--- applyProc :: [LispVal] -> IOThrowsError LispVal
--- applyProc [func, List args] = apply func args
--- applyProc (func : args) = apply func args
--- applyProc e = throwError $ NumArgs 2 e
--- 
 ---------------------------------------------------- 
+apply :: LispVal -> [LispVal] -> LispEval
+apply (IOFunc func) args = lift $ func args
+apply (PrimitiveFunc func) args = lift . liftThrows $ func args
+apply (Func ps vs b c) args = do
+    originalEnv <- getEnv
+    if num ps /= num args && isNothing vs
+       then lift . throwError $ NumArgs (num ps) args
+       else do
+        -- this is not a nice way to handle a stack frame, just splatting over
+        -- the top
+        bindVars $ envToList c
+        bindVars $ zip ps args
+        bindVarArgs vs
+        r <- evalBody
+        -- and then manually unwinding it
+        putEnv originalEnv
+        return r
+    where remainingArgs = drop (length ps) args
+          num = toInteger . length
+          evalBody = liftM last $ mapM eval b
+          bindVarArgs arg = case arg of
+              Just argName -> bindVars [(argName, List remainingArgs)]
+              Nothing -> return ()
+apply e _ = lift . throwError $ TypeMismatch "function" e
+
+makeFunc :: Maybe String -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeFunc varargs p b = do
+    env <- getEnv
+    return $ Func (map show p) varargs b env
+
+makeNormalFunc :: [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeNormalFunc = makeFunc Nothing
+
+makeVarargs :: LispVal -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeVarargs = makeFunc . Just . show
+
+applyProc :: [LispVal] -> LispEval
+applyProc [func, List args] = apply func args
+applyProc (func : args) = apply func args
+applyProc e = lift . throwError $ NumArgs 2 e
