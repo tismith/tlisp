@@ -32,7 +32,6 @@ type IOThrowsError = ErrorT LispError (StateT Env IO)
 type LispEval = ContT LispVal IOThrowsError LispVal
 
 data LispVal = Atom String
-        | WrongClause
         | List [LispVal]
         | Vector (V.Vector LispVal)
         | DottedList [LispVal] LispVal
@@ -44,16 +43,21 @@ data LispVal = Atom String
         | Complex (Complex Float)
         | Ratio (Ratio Integer)
         | Port Handle
+        | Continuation (LispVal -> LispEval)
         | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
         | IOFunc ([LispVal] -> IOThrowsError LispVal)
         | Func
             { params :: [String]
             , vararg :: Maybe String
             , body :: [LispVal], closure :: Env}
+        | WrongClause -- this is a bit yuck, having to encode
+                      -- an eval-time error into LispVal since
+                      -- ContT can't be abstracted over it's return type
 
 instance Show LispVal where show = showVal
 showVal :: LispVal -> String
 showVal WrongClause = "<wrong clause>"
+showVal (Continuation _) = "<continuation>"
 showVal (String contents) = "\"" ++ unescapeString contents ++ "\""
 showVal (Atom name) = name
 showVal (Number contents) = show contents

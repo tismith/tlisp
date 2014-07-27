@@ -21,11 +21,12 @@ tlisp>>> (map (curry + 2) ’(1 2 3 4))
 =======
 Interesting features, beyond those in write-yourself-a-scheme:
 
+*: uses StateT to hold the environment instead of using IORefs
+*: uses ContT to implement call-with-current-continuation
 *: native support for integers, rationals, floating point and complex numbers
 *: arithmetic operations perform type promotion between the numerical types
 *: uses haskeline for command history and tab-completion in the repl
 *: has doctest tests for the parser
-*: uses stateT to hold the environment
 
 =======
 To do:
@@ -36,10 +37,9 @@ To do:
 *: add eval support for quasiquotes and unquotes
 
 =======
-End game goals:
+Ambitions:
 
 *: add macros
-*: add continuations
 
 =======
 To run the tests:

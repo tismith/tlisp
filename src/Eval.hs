@@ -7,6 +7,7 @@ import LispEnvironment
 import Control.Monad.Trans (lift)
 import Control.Monad (liftM)
 import Control.Monad.Error (throwError, MonadError)
+import Control.Monad.Cont (callCC)
 import Data.Maybe (isNothing)
 
 eval :: LispVal -> LispEval
@@ -77,6 +78,10 @@ eval (List (Atom "apply" : args)) = do
     applyProc argVals
 eval (List [Atom "load", String filename]) =
     (lift . load) filename >>= liftM last . mapM eval
+eval (List [Atom "call-with-current-continuation", proc]) =
+    callCC $ \cont -> do
+        f <- eval proc
+        applyProc [f, Continuation cont]
 eval (List (function : args)) = do
     func <- eval function
     argVals <- mapM eval args
@@ -127,6 +132,8 @@ evalCondClause (List (test:exprs)) =
 evalCondClause badForm = lift . throwError $ BadSpecialForm "Unrecognized cond clause form" badForm
 
 apply :: LispVal -> [LispVal] -> LispEval
+apply (Continuation c) [arg] = c arg
+apply (Continuation _) e = lift . throwError $ NumArgs 1 e
 apply (IOFunc func) args = lift $ func args
 apply (PrimitiveFunc func) args = lift . liftThrows $ func args
 apply (Func ps vs b c) args = do
