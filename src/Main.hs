@@ -8,6 +8,7 @@ import LispEnvironment
 import Control.Monad.Trans (lift, liftIO)
 -- need the strict state monad for monadexception
 import Control.Monad.State.Strict (StateT, put, get, evalStateT)
+import Control.Monad.Cont (runContT)
 import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)
 import Control.Monad (liftM, when)
@@ -21,7 +22,7 @@ main = do args <- getArgs
           if null args then runRepl else runOne args
 
 evalString :: Env -> String -> IO (String, Env)
-evalString env expr = runIOThrows (liftM show (liftThrows (readExpr expr) >>= eval)) env
+evalString env expr = runIOThrows (liftM show $ runEval ((lift $ liftThrows (readExpr expr)) >>= eval)) env
 
 evalAndPrint :: Env -> String -> IO Env
 evalAndPrint env expr = do
@@ -31,7 +32,7 @@ evalAndPrint env expr = do
 
 runOne :: [String] -> IO ()
 runOne args = do
-    (out, _) <- runIOThrows (liftM show
+    (out, _) <- runIOThrows (liftM show $ runEval
             (bindVars [("args", List $ map String $ drop 1 args)] >> eval (List [Atom "load", String (head args)])))
         primitiveBindings
     hPutStrLn stderr out

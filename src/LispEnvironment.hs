@@ -6,6 +6,7 @@ module LispEnvironment (
     liftThrows,
     liftEnvThrows,
     runIOThrows,
+    runEval,
     getEnv,
     putEnv,
     getVar,
@@ -18,6 +19,7 @@ import LispVals
 
 import Control.Monad.State (get, put, runState, runStateT, MonadState)
 import Control.Monad.Error (ErrorT, runErrorT, throwError, MonadError, catchError)
+import Control.Monad.Cont (runContT)
 import qualified Data.Map as M (lookup, insert, fromList, union, toList, keys)
 
 envSymbols :: Env -> [String]
@@ -47,6 +49,9 @@ runIOThrows action env = do
         (a, s) <- runStateT (runErrorT (trapError action)) env
         return (extractValue a, s)
     where trapError act = catchError act (return . show)
+
+runEval :: LispEval -> IOThrowsError LispVal
+runEval e = runContT e return
 
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val

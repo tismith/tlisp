@@ -4,7 +4,8 @@ module LispVals (
     EnvThrowsError,
     IOThrowsError,
     LispVal(..),
-    LispError(..)
+    LispError(..),
+    LispEval
   ) where
 
 import Data.Ratio (Ratio, numerator, denominator)
@@ -14,6 +15,7 @@ import qualified Data.Map as M (Map)
 import Text.ParserCombinators.Parsec (ParseError)
 import Control.Monad.Error (ErrorT, Error, noMsg, strMsg)
 import Control.Monad.State (State, StateT)
+import Control.Monad.Cont (ContT)
 import System.IO (Handle)
 
 type Env = M.Map String LispVal
@@ -26,6 +28,8 @@ type EnvThrowsError = ErrorT LispError (State Env)
 -- ErrorT e (StateT s m) a ~ s -> m (Either e a, s)
 -- StateT s (ErrorT e m) a ~ s -> m (Either e (a, s))
 type IOThrowsError = ErrorT LispError (StateT Env IO)
+
+type LispEval = ContT LispVal IOThrowsError LispVal
 
 data LispVal = Atom String
         | List [LispVal]
