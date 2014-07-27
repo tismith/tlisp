@@ -32,6 +32,7 @@ type IOThrowsError = ErrorT LispError (StateT Env IO)
 type LispEval = ContT LispVal IOThrowsError LispVal
 
 data LispVal = Atom String
+        | WrongClause
         | List [LispVal]
         | Vector (V.Vector LispVal)
         | DottedList [LispVal] LispVal
@@ -52,6 +53,7 @@ data LispVal = Atom String
 
 instance Show LispVal where show = showVal
 showVal :: LispVal -> String
+showVal WrongClause = "<wrong clause>"
 showVal (String contents) = "\"" ++ unescapeString contents ++ "\""
 showVal (Atom name) = name
 showVal (Number contents) = show contents

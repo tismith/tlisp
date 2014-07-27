@@ -32,19 +32,17 @@ eval (List [Atom "if", p, conseq]) =
        case result of
          Bool False -> lift $ throwError $ Unspecified "if without an else"
          _ -> eval conseq
-----------------------------------------------------
--- eval (List (Atom "cond":(clause:cs))) =
---     do result <- foldl (chainEvalClause evalCondClause) (evalCondClause clause) cs
---        case result of
---             Just l -> return l
---             Nothing -> throwError $ Unspecified "no matching cond"
--- eval c (List (Atom "case":key:clause:cs)) =
---     do evalKey <- eval c key
---        result <- foldl (chainEvalClause c (evalCaseClause evalKey)) (evalCaseClause c evalKey clause) cs
---        case result of
---             Just l -> c l
---             Nothing -> throwError $ Unspecified "no matching case"
----------------------------------------------------- 
+eval (List (Atom "cond":(clause:cs))) =
+    do result <- foldl (chainEvalClause evalCondClause) (evalCondClause clause) cs
+       case result of
+            WrongClause -> lift . throwError $ Unspecified "no matching cond"
+            _ -> return result
+eval (List (Atom "case":key:clause:cs)) =
+    do evalKey <- eval key
+       result <- foldl (chainEvalClause (evalCaseClause evalKey)) (evalCaseClause evalKey clause) cs
+       case result of
+            WrongClause -> lift . throwError $ Unspecified "no matching case"
+            _ -> return result
 eval (List [Atom "set!", Atom var, form]) = eval form >>= lift . setVar var
 eval (List [Atom "string-set!", Atom var, i, ch]) =
     do i' <- eval i
@@ -85,51 +83,49 @@ eval (List (function : args)) = do
     apply func argVals
 eval badForm = lift $ throwError $ BadSpecialForm "Unrecognized special form" badForm
 
-----------------------------------------------------
--- chainEvalClause :: (LispVal -> IOThrowsError (Maybe LispVal)) -> IOThrowsError (Maybe LispVal) -> LispVal -> IOThrowsError (Maybe LispVal)
--- chainEvalClause evalFunc evalC unevalC = do
---                         clause <- evalC
---                         case clause of
---                             Just _ -> return clause
---                             Nothing -> evalFunc unevalC
--- 
--- evalCaseClause :: LispVal -> LispVal -> IOThrowsError (Maybe LispVal)
--- evalCaseClause key (List (datums:(exprs@(_:_)))) = --exprs can't be []
---     case datums of
---         Atom "else" -> do
---                 evalExprs <- mapM eval exprs
---                 return $ Just $ last evalExprs
---         List l -> do success <- liftThrows . liftM or $ mapM (\x -> eqv [x, key] >>= unpackBool) l
---                      if success
---                         then do
---                             evalExprs <- mapM eval exprs
---                             return $ Just $ last evalExprs
---                         else return Nothing
---         e -> throwError $ TypeMismatch "list" e
--- evalCaseClause _ badForm = throwError $ BadSpecialForm "Unrecognized case clause form" badForm
--- 
--- evalCondClause :: LispVal -> IOThrowsError (Maybe LispVal)
--- evalCondClause (List (test:[])) =
---     do success <- eval test
---        case success of
---             Bool True -> return $ Just success
---             Bool False -> return Nothing
---             _ -> throwError $ TypeMismatch "boolean" success
--- evalCondClause (List (test:exprs)) =
---     case test of
---         Atom "else" -> do
---             evalExprs <- mapM eval exprs
---             return $ Just $ last evalExprs
---         _ -> do success <- eval test
---                 case success of
---                     Bool True -> do
---                         evalExprs <- mapM eval exprs
---                         return $ Just $ last evalExprs
---                     Bool False -> return Nothing
---                     _ -> throwError $ TypeMismatch "boolean" success
--- evalCondClause badForm = throwError $ BadSpecialForm "Unrecognized cond clause form" badForm
--- 
----------------------------------------------------- 
+chainEvalClause :: (LispVal -> LispEval) -> LispEval -> LispVal -> LispEval
+chainEvalClause evalFunc evalC unevalC = do
+                        clause <- evalC
+                        case clause of
+                            WrongClause -> evalFunc unevalC
+                            _ -> return clause
+
+evalCaseClause :: LispVal -> LispVal -> LispEval
+evalCaseClause key (List (datums:(exprs@(_:_)))) = --exprs can't be []
+    case datums of
+        Atom "else" -> do
+                evalExprs <- mapM eval exprs
+                return $ last evalExprs
+        List l -> do success <- lift . liftThrows . liftM or $ mapM (\x -> eqv [x, key] >>= unpackBool) l
+                     if success
+                        then do
+                            evalExprs <- mapM eval exprs
+                            return $ last evalExprs
+                        else return WrongClause
+        e -> lift . throwError $ TypeMismatch "list" e
+evalCaseClause _ badForm = lift . throwError $ BadSpecialForm "Unrecognized case clause form" badForm
+
+evalCondClause :: LispVal -> LispEval
+evalCondClause (List (test:[])) =
+    do success <- eval test
+       case success of
+            Bool True -> return success
+            Bool False -> return WrongClause
+            _ -> lift . throwError $ TypeMismatch "boolean" success
+evalCondClause (List (test:exprs)) =
+    case test of
+        Atom "else" -> do
+            evalExprs <- mapM eval exprs
+            return $ last evalExprs
+        _ -> do success <- eval test
+                case success of
+                    Bool True -> do
+                        evalExprs <- mapM eval exprs
+                        return $ last evalExprs
+                    Bool False -> return WrongClause
+                    _ -> lift . throwError $ TypeMismatch "boolean" success
+evalCondClause badForm = lift . throwError $ BadSpecialForm "Unrecognized cond clause form" badForm
+
 apply :: LispVal -> [LispVal] -> LispEval
 apply (IOFunc func) args = lift $ func args
 apply (PrimitiveFunc func) args = lift . liftThrows $ func args
