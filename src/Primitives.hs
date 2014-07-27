@@ -1,6 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Primitives (
     ioPrimitives,
     primitives,
@@ -20,16 +21,16 @@ import LispVals
 import LispEnvironment
 import Parse
 
-import Control.Monad.Trans (liftIO)
+import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Monad (liftM, foldM, zipWithM)
-import Control.Monad.Error (throwError, catchError)
+import Control.Monad.Error (throwError, catchError, MonadError)
 import Data.Ratio (Ratio, (%))
 import Data.Complex (Complex((:+)))
 import Data.Char (toLower)
 import System.IO (IOMode(ReadMode, WriteMode), hPrint, hClose, openFile, stdin, stdout)
 import Data.Function (on)
 
-ioPrimitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
+ioPrimitives :: (MonadError LispError m, MonadIO m) => [(String, [LispVal] -> m LispVal)]
 ioPrimitives = [("open-input-file", makePort ReadMode),
                 ("open-output-file", makePort WriteMode),
                 ("close-input-port", closePort),
@@ -39,7 +40,7 @@ ioPrimitives = [("open-input-file", makePort ReadMode),
                 ("read-contents", readContents),
                 ("read-all", readAll)]
 
-primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
+primitives :: (MonadError LispError m) => [(String, [LispVal] -> m LispVal)]
 primitives = [("+", anyNumListOp (+)),
               ("-", anyNumListMinus),
               ("*", anyNumListOp (*)),
@@ -98,32 +99,32 @@ primitives = [("+", anyNumListOp (+)),
               ("list->string", listToString),
               ("string-copy", stringCopy)]
 
-stringCopy :: [LispVal] -> ThrowsError LispVal
+stringCopy :: (MonadError LispError m) => [LispVal] -> m LispVal
 stringCopy (s:[]) = do
     rawString <- unpackStr s
     return $ String rawString
 stringCopy e = throwError $ NumArgs 1 e
 
-listToString :: [LispVal] -> ThrowsError LispVal
+listToString :: (MonadError LispError m) => [LispVal] -> m LispVal
 listToString (l:[]) = do
     cs <- unpackList l
     rawChars <- mapM unpackChar cs
     return $ String rawChars
 listToString e = throwError $ NumArgs 1 e
 
-stringToList :: [LispVal] -> ThrowsError LispVal
+stringToList :: (MonadError LispError m) => [LispVal] -> m LispVal
 stringToList (s:[]) = do
     rawString <- unpackStr s
     return $ List $ map Char rawString
 stringToList e = throwError $ NumArgs 1 e
 
-stringAppend :: [LispVal] -> ThrowsError LispVal
+stringAppend :: (MonadError LispError m) => [LispVal] -> m LispVal
 stringAppend ss@(_:_) = do
     rawStrings <- mapM unpackStr ss
     return $ String $ concat rawStrings
 stringAppend e = throwError $ NumArgs 1 e
 
-subString :: [LispVal] -> ThrowsError LispVal
+subString :: (MonadError LispError m) => [LispVal] -> m LispVal
 subString (s:b:e:[]) = do
     rawString <- unpackStr s
     rawBegin <- unpackNum b
@@ -131,14 +132,14 @@ subString (s:b:e:[]) = do
     return $ String (take (fromIntegral $ rawEnd - rawBegin) (drop (fromIntegral rawBegin) rawString))
 subString e = throwError $ NumArgs 3 e
 
-stringRef :: [LispVal] -> ThrowsError LispVal
+stringRef :: (MonadError LispError m) => [LispVal] -> m LispVal
 stringRef (s:k:[]) = do
     rawString <- unpackStr s
     rawIndex <- unpackNum k
     return $ Char (rawString !! fromIntegral rawIndex)
 stringRef e = throwError $ NumArgs 2 e
 
-makeString :: [LispVal] -> ThrowsError LispVal
+makeString :: (MonadError LispError m) => [LispVal] -> m LispVal
 makeString (k:[]) = do
     size <- unpackNum k
     return $ String (replicate (fromIntegral size) '.')
@@ -148,7 +149,7 @@ makeString (k:c:[]) = do
     return $ String (replicate (fromIntegral size) character)
 makeString e = throwError $ NumArgs 2 e
 
-charsToString :: [LispVal] -> ThrowsError LispVal
+charsToString :: (MonadError LispError m) => [LispVal] -> m LispVal
 charsToString [] = throwError $ NumArgs 1 []
 charsToString chars = do
     newString <- mapM unpackChar chars
@@ -159,12 +160,12 @@ isLispValExact (Number _) = True
 isLispValExact (Ratio _) = True
 isLispValExact _ = False
 
-stringToSymbol :: [LispVal] -> ThrowsError LispVal
+stringToSymbol :: (MonadError LispError m) => [LispVal] -> m LispVal
 stringToSymbol (String s:[]) = return $ Atom s
 stringToSymbol (e:[]) = throwError $ TypeMismatch "string" e
 stringToSymbol e = throwError $ NumArgs 1 e
 
-symbolToString :: [LispVal] -> ThrowsError LispVal
+symbolToString :: (MonadError LispError m) => [LispVal] -> m LispVal
 symbolToString (Atom s:[]) = return $ String s
 symbolToString (e:[]) = throwError $ TypeMismatch "symbol" e
 symbolToString e = throwError $ NumArgs 1 e
@@ -236,25 +237,25 @@ isLispValString :: LispVal -> Bool
 isLispValString (String _) = True
 isLispValString _ = False
 
-isLispValTest :: (LispVal -> Bool) -> [LispVal] -> ThrowsError LispVal
+isLispValTest :: (MonadError LispError m) => (LispVal -> Bool) -> [LispVal] -> m LispVal
 isLispValTest f (l:[]) = return $ Bool $ f l
 isLispValTest _ e = throwError $ NumArgs 1 e
 
-onlyNumListOp :: (forall a. Integral a => a -> a -> a) -> [LispVal] -> ThrowsError LispVal
+onlyNumListOp :: (MonadError LispError m) => (forall a. Integral a => a -> a -> a) -> [LispVal] -> m LispVal
 onlyNumListOp f (l:ls@(_:_)) = foldM (onlyNumBinOp f) l ls
 onlyNumListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
-onlyNumBinOp :: (forall a. Integral a => a -> a -> a) -> LispVal -> LispVal -> ThrowsError LispVal
+onlyNumBinOp :: (MonadError LispError m) => (forall a. Integral a => a -> a -> a) -> LispVal -> LispVal -> m LispVal
 onlyNumBinOp f (Number a) (Number b) = return $ Number (f a b)
 onlyNumBinOp _ (Number _) e = throwError $ TypeMismatch "integral" e
 onlyNumBinOp _ e _ = throwError $ TypeMismatch "integral" e
 
-anyNumListDiv :: [LispVal] -> ThrowsError LispVal
+anyNumListDiv :: (MonadError LispError m) => [LispVal] -> m LispVal
 anyNumListDiv (l:ls@(_:_)) = foldM anyNumBinDiv l ls
 anyNumListDiv (l:[]) = anyNumBinDiv (Float 1.0) l
 anyNumListDiv badArgList = throwError $ NumArgs 1 badArgList
 
-anyNumBinDiv :: LispVal -> LispVal -> ThrowsError LispVal
+anyNumBinDiv :: (MonadError LispError m) => LispVal -> LispVal -> m LispVal
 anyNumBinDiv (Number a) (Number b) = return $ Number (div a b)
 anyNumBinDiv (Number a) (Float b) = return $ Float (fromIntegral a / b)
 anyNumBinDiv (Number a) (Complex b) = return $ Complex ((fromIntegral a :+ 0) / b)
@@ -273,16 +274,16 @@ anyNumBinDiv (Ratio a) (Complex b) = return $ Complex (fromRational a / b)
 anyNumBinDiv (Ratio a) (Ratio b) = return $ Ratio (a / b)
 anyNumBinDiv e _ = throwError $ TypeMismatch "number" e
 
-anyNumListOp :: (forall a. Num a => a -> a -> a) -> [LispVal] -> ThrowsError LispVal
+anyNumListOp :: (MonadError LispError m) => (forall a. Num a => a -> a -> a) -> [LispVal] -> m LispVal
 anyNumListOp f (l:ls@(_:_)) = foldM (anyNumBinOp f) l ls
 anyNumListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
-anyNumListMinus :: [LispVal] -> ThrowsError LispVal
+anyNumListMinus :: (MonadError LispError m) => [LispVal] -> m LispVal
 anyNumListMinus (l:ls@(_:_)) = foldM (anyNumBinOp (-)) l ls
 anyNumListMinus (l:[]) = anyNumBinOp (-) (Number 0) l
 anyNumListMinus badArgList = throwError $ NumArgs 1 badArgList
 
-anyNumBinOp :: (forall a. Num a => a -> a -> a) -> LispVal -> LispVal -> ThrowsError LispVal
+anyNumBinOp :: (MonadError LispError m) => (forall a. Num a => a -> a -> a) -> LispVal -> LispVal -> m LispVal
 anyNumBinOp f (Number a) (Number b) = return $ Number (f a b)
 anyNumBinOp f (Number a) (Float b) = return $ Float (f (fromIntegral a) b)
 anyNumBinOp f (Number a) (Complex b) = return $ Complex (f (fromIntegral a :+ 0) b)
@@ -301,14 +302,14 @@ anyNumBinOp f (Ratio a) (Complex b) = return $ Complex (f (fromRational a) b)
 anyNumBinOp f (Ratio a) (Ratio b) = return $ Ratio (f a b)
 anyNumBinOp _ e _ = throwError $ TypeMismatch "number" e
 
-anyEqBoolListOp :: (forall a. Eq a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+anyEqBoolListOp :: (MonadError LispError m) => (forall a. Eq a => a -> a -> Bool) -> [LispVal] -> m LispVal
 anyEqBoolListOp f ls@(_:_:_) = do
                     sequencedLispBools <- zipWithM (anyEqBoolBinOp f) ls (drop 1 ls)
                     sequencedBools <- mapM unpackBool sequencedLispBools
                     return $ Bool $ and sequencedBools
 anyEqBoolListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
-anyEqBoolBinOp :: (forall a. Eq a => a -> a -> Bool) -> LispVal -> LispVal -> ThrowsError LispVal
+anyEqBoolBinOp :: (MonadError LispError m) => (forall a. Eq a => a -> a -> Bool) -> LispVal -> LispVal -> m LispVal
 anyEqBoolBinOp f (Number a) (Number b) = return $ Bool (f a b)
 anyEqBoolBinOp f (Number a) (Float b) = return $ Bool (f (fromIntegral a) b)
 anyEqBoolBinOp f (Number a) (Complex b) = return $ Bool (f (fromIntegral a :+ 0) b)
@@ -327,14 +328,14 @@ anyEqBoolBinOp f (Ratio a) (Complex b) = return $ Bool (f (fromRational a) b)
 anyEqBoolBinOp f (Ratio a) (Ratio b) = return $ Bool (f a b)
 anyEqBoolBinOp _ e _ = throwError $ TypeMismatch "number" e
 
-anyOrdBoolListOp :: (forall a. Ord a => a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+anyOrdBoolListOp :: (MonadError LispError m) => (forall a. Ord a => a -> a -> Bool) -> [LispVal] -> m LispVal
 anyOrdBoolListOp f ls@(_:_:_) = do
                     sequencedLispBools <- zipWithM (anyOrdBoolBinOp f) ls (drop 1 ls)
                     sequencedBools <- mapM unpackBool sequencedLispBools
                     return $ Bool $ and sequencedBools
 anyOrdBoolListOp _ badArgList = throwError $ NumArgs 2 badArgList
 
-anyOrdBoolBinOp :: (forall a. Ord a => a -> a -> Bool) -> LispVal -> LispVal -> ThrowsError LispVal
+anyOrdBoolBinOp :: (MonadError LispError m) => (forall a. Ord a => a -> a -> Bool) -> LispVal -> LispVal -> m LispVal
 anyOrdBoolBinOp f (Number a) (Number b) = return $ Bool (f a b)
 anyOrdBoolBinOp f (Number a) (Float b) = return $ Bool (f (fromIntegral a) b)
 anyOrdBoolBinOp f (Number a) (Ratio b) = return $ Bool (f (a % 1) b)
@@ -348,32 +349,32 @@ anyOrdBoolBinOp f (Ratio a) (Float b) = return $ Bool (f (fromRational a) b)
 anyOrdBoolBinOp f (Ratio a) (Ratio b) = return $ Bool (f a b)
 anyOrdBoolBinOp _ e _ = throwError $ TypeMismatch "number" e
 
-boolBinop :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+boolBinop :: (MonadError LispError m) => (LispVal -> m a) -> (a -> a -> Bool) -> [LispVal] -> m LispVal
 boolBinop unpacker op args = if length args /= 2
                              then throwError $ NumArgs 2 args
                              else do left <- unpacker $ head args
                                      right <- unpacker $ args !! 1
                                      return $ Bool $ left `op` right
 
-strBoolBinop :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
+strBoolBinop :: (MonadError LispError m) => (String -> String -> Bool) -> [LispVal] -> m LispVal
 strBoolBinop = boolBinop unpackStr
-boolBoolBinop :: (Bool -> Bool -> Bool) -> [LispVal] -> ThrowsError LispVal
+boolBoolBinop :: (MonadError LispError m) => (Bool -> Bool -> Bool) -> [LispVal] -> m LispVal
 boolBoolBinop = boolBinop unpackBool
 
-unpackChar :: LispVal -> ThrowsError Char
+unpackChar :: (MonadError LispError m) => LispVal -> m Char
 unpackChar (Char c) = return c
 unpackChar notChar = throwError $ TypeMismatch "character" notChar
 
-unpackList :: LispVal -> ThrowsError [LispVal]
+unpackList :: (MonadError LispError m) => LispVal -> m [LispVal]
 unpackList (List l) = return l
 unpackList notList = throwError $ TypeMismatch "list" notList
 
-unpackNum :: LispVal -> ThrowsError Integer
+unpackNum :: (MonadError LispError m) => LispVal -> m Integer
 unpackNum (Number n) = return n
 unpackNum (List [n]) = unpackNum n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
-unpackComplex :: LispVal -> ThrowsError (Complex Float)
+unpackComplex :: (MonadError LispError m) => LispVal -> m (Complex Float)
 unpackComplex (Complex n) = return n
 unpackComplex (Number n) = return (fromIntegral n :+ 0)
 unpackComplex (Float n) = return (n :+ 0)
@@ -381,24 +382,24 @@ unpackComplex (Ratio n) = return (fromRational n :+ 0)
 unpackComplex (List [n]) = unpackComplex n
 unpackComplex notNum = throwError $ TypeMismatch "number" notNum
 
-unpackRatio :: LispVal -> ThrowsError (Ratio Integer)
+unpackRatio :: (MonadError LispError m) => LispVal -> m (Ratio Integer)
 unpackRatio (Ratio n) = return n
 unpackRatio (Number n) = return (n % 1)
 unpackRatio (List [n]) = unpackRatio n
 unpackRatio notNum = throwError $ TypeMismatch "number" notNum
 
-unpackFloat :: LispVal -> ThrowsError Float
+unpackFloat :: (MonadError LispError m) => LispVal -> m Float
 unpackFloat (Float n) = return n
 unpackFloat (Ratio n) = return (fromRational n)
 unpackFloat (Number n) = return (fromIntegral n)
 unpackFloat (List [n]) = unpackFloat n
 unpackFloat notNum = throwError $ TypeMismatch "number" notNum
 
-unpackStr :: LispVal -> ThrowsError String
+unpackStr :: (MonadError LispError m) => LispVal -> m String
 unpackStr (String s) = return s
 unpackStr notString = throwError $ TypeMismatch "string" notString
 
-unpackCoerceStr :: LispVal -> ThrowsError String
+unpackCoerceStr :: (MonadError LispError m) => LispVal -> m String
 unpackCoerceStr (String s) = return s
 unpackCoerceStr (Number s) = return $ show s
 unpackCoerceStr (Complex s) = return $ show s
@@ -407,31 +408,31 @@ unpackCoerceStr (Ratio s) = return $ show s
 unpackCoerceStr b@(Bool _) = return $ show b
 unpackCoerceStr notString = throwError $ TypeMismatch "string" notString
 
-unpackBool :: LispVal -> ThrowsError Bool
+unpackBool :: (MonadError LispError m) => LispVal -> m Bool
 unpackBool (Bool b) = return b
 unpackBool notBool = throwError $ TypeMismatch "boolean" notBool
 
-car :: [LispVal] -> ThrowsError LispVal
+car :: (MonadError LispError m) => [LispVal] -> m LispVal
 car [List (x:_)] = return x
 car [DottedList (x:_) _] = return x
 car [badArg] = throwError $ TypeMismatch "pair" badArg
 car badArgList = throwError $ NumArgs 1 badArgList
 
-cdr :: [LispVal] -> ThrowsError LispVal
+cdr :: (MonadError LispError m) => [LispVal] -> m LispVal
 cdr [List (_ : xs)] = return $ List xs
 cdr [DottedList (_ : xs) x] = return $ DottedList xs x
 cdr [DottedList _ x] = return x
 cdr [badArg] = throwError $ TypeMismatch "pair" badArg
 cdr badArgList = throwError $ NumArgs 1 badArgList
 
-cons :: [LispVal] -> ThrowsError LispVal
+cons :: (MonadError LispError m) => [LispVal] -> m LispVal
 cons [x1, List []] = return $ List [x1]
 cons [x, List xs] = return $ List $ x : xs
 cons [x, DottedList xs xlast] = return $ DottedList (x : xs) xlast
 cons [x1, x2] = return $ DottedList [x1] x2
 cons badArgList = throwError $ NumArgs 2 badArgList
 
-eqv :: [LispVal] -> ThrowsError LispVal
+eqv :: (MonadError LispError m) => [LispVal] -> m LispVal
 eqv [Bool arg1, Bool arg2] = return $ Bool $ arg1 == arg2
 eqv [Number arg1, Number arg2] = return $ Bool $ arg1 == arg2
 eqv [Ratio arg1, Ratio arg2] = return $ Bool $ arg1 == arg2
@@ -449,16 +450,16 @@ eqv [List arg1, List arg2] = return $ Bool $ (length arg1 == length arg2) &&
 eqv [_, _] = return $ Bool False
 eqv badArgList = throwError $ NumArgs 2 badArgList
 
-data EqUnpacker = forall a. Eq a => AnyEqUnpacker (LispVal -> ThrowsError a)
+data EqUnpacker m = forall a. Eq a => AnyEqUnpacker (LispVal -> m a)
 
-unpackEquals :: LispVal -> LispVal -> EqUnpacker -> ThrowsError Bool
+unpackEquals :: (MonadError LispError m) => LispVal -> LispVal -> EqUnpacker m -> m Bool
 unpackEquals arg1 arg2 (AnyEqUnpacker unpacker) =
              do unpacked1 <- unpacker arg1
                 unpacked2 <- unpacker arg2
                 return $ unpacked1 == unpacked2
         `catchError` const (return False)
 
-equal :: [LispVal] -> ThrowsError LispVal
+equal :: (MonadError LispError m) => [LispVal] -> m LispVal
 equal [List arg1, List arg2] = return $ Bool $ (length arg1 == length arg2) &&
                                                     all eqvPair (zip arg1 arg2)
     where eqvPair (x1, x2) = case equal [x1, x2] of
@@ -472,36 +473,36 @@ equal [arg1, arg2] = do
     return $ Bool (primitiveEquals || let (Bool x) = eqvEquals in x)
 equal badArgList = throwError $ NumArgs 2 badArgList
 
-makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
+makePort ::(MonadError LispError m, MonadIO m) =>  IOMode -> [LispVal] -> m LispVal
 makePort mode [String filename] = liftM Port $ liftIO $ openFile filename mode
 makePort _ [e] = throwError $ TypeMismatch "string" e
 makePort _ e = throwError $ NumArgs 1 e
 
-closePort :: [LispVal] -> IOThrowsError LispVal
+closePort :: (MonadError LispError m, MonadIO m) => [LispVal] -> m LispVal
 closePort [Port port] = liftIO $ hClose port >> return (Bool True)
 closePort _ = return $ Bool False
 
-readProc :: [LispVal] -> IOThrowsError LispVal
+readProc :: (MonadError LispError m, MonadIO m) => [LispVal] -> m LispVal
 readProc [] = readProc [Port stdin]
 readProc [Port _] = liftIO getLine >>= liftThrows . readExpr
 readProc [e] = throwError $ TypeMismatch "port" e
 readProc e = throwError $ NumArgs 1 e
 
-writeProc :: [LispVal] -> IOThrowsError LispVal
+writeProc :: (MonadError LispError m, MonadIO m) => [LispVal] -> m LispVal
 writeProc [obj] = writeProc [obj, Port stdout]
 writeProc [obj, Port port] = liftIO $ hPrint port obj >> return (Bool True)
 writeProc [_, e] = throwError $ TypeMismatch "port" e
 writeProc e = throwError $ NumArgs 2 e
 
-readContents :: [LispVal] -> IOThrowsError LispVal
+readContents :: (MonadError LispError m, MonadIO m) => [LispVal] -> m LispVal
 readContents [String filename] = liftM String $ liftIO $ readFile filename
 readContents [e] = throwError $ TypeMismatch "string" e
 readContents e = throwError $ NumArgs 1 e
 
-readAll :: [LispVal] -> IOThrowsError LispVal
+readAll :: (MonadError LispError m, MonadIO m) => [LispVal] -> m LispVal
 readAll [String filename] = liftM List $ load filename
 readAll [e] = throwError $ TypeMismatch "string" e
 readAll e = throwError $ NumArgs 1 e
 
-load :: String -> IOThrowsError [LispVal]
+load :: (MonadIO m, MonadError LispError m) => String -> m [LispVal]
 load filename = liftIO (readFile filename) >>= liftThrows . readExprList

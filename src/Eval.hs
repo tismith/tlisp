@@ -46,11 +46,11 @@ eval (List (Atom "case":key:clause:cs)) =
 eval (List [Atom "set!", Atom var, form]) = eval form >>= setVar var
 eval (List [Atom "string-set!", Atom var, i, ch]) =
     do i' <- eval i
-       index <- liftThrows $ unpackNum i'
+       index <- unpackNum i'
        ch' <- eval ch
-       char <- liftThrows $ unpackChar ch'
+       char <- unpackChar ch'
        v <- getVar var
-       str <- liftThrows $ unpackStr v
+       str <- unpackStr v
        let (f,s) = splitAt (fromIntegral index) str
        case s of
             [] -> throwError $ Unspecified "invalid index"
@@ -58,25 +58,25 @@ eval (List [Atom "string-set!", Atom var, i, ch]) =
 eval (List [Atom "string-fill!", Atom var, ch]) =
     do v <- getVar var
        ch' <- eval ch
-       char <- liftThrows $ unpackChar ch'
-       str <- liftThrows $ unpackStr v
+       char <- unpackChar ch'
+       str <- unpackStr v
        setVar var (String $ map (const char) str)
 eval (List [Atom "define", Atom var, form]) = eval form >>= defineVar var
 eval (List (Atom "define" : List (Atom var : p) : b)) =
-    lift $ makeNormalFunc p b >>= defineVar var
+    makeNormalFunc p b >>= defineVar var
 eval (List (Atom "define" : DottedList (Atom var : p) varargs : b)) =
-    lift $ makeVarargs varargs p b >>= defineVar var
+    makeVarargs varargs p b >>= defineVar var
 eval (List (Atom "lambda" : List p : b)) =
-    lift $ makeNormalFunc p b
+    makeNormalFunc p b
 eval (List (Atom "lambda" : DottedList p varargs : b)) =
-    lift $ makeVarargs varargs p b
+    makeVarargs varargs p b
 eval (List (Atom "lambda" : varargs@(Atom _) : b)) =
-    lift $ makeVarargs varargs [] b
+    makeVarargs varargs [] b
 eval (List (Atom "apply" : args)) = do
     argVals <- mapM eval args
     applyProc argVals
 eval (List [Atom "load", String filename]) =
-    (lift . load) filename >>= liftM last . mapM eval
+    load filename >>= liftM last . mapM eval
 eval (List [Atom "call-with-current-continuation", proc]) =
     callCC $ \cont -> do
         f <- eval proc
@@ -100,7 +100,7 @@ evalCaseClause key (List (datums:(exprs@(_:_)))) = --exprs can't be []
         Atom "else" -> do
                 evalExprs <- mapM eval exprs
                 return $ last evalExprs
-        List l -> do success <- liftThrows . liftM or $ mapM (\x -> eqv [x, key] >>= unpackBool) l
+        List l -> do success <- liftM or $ mapM (\x -> eqv [x, key] >>= unpackBool) l
                      if success
                         then do
                             evalExprs <- mapM eval exprs
@@ -157,15 +157,15 @@ apply (Func ps vs b c) args = do
               Nothing -> return ()
 apply e _ = throwError $ TypeMismatch "function" e
 
-makeFunc :: Maybe String -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeFunc :: Maybe String -> [LispVal] -> [LispVal] -> LispEval
 makeFunc varargs p b = do
     env <- getEnv
     return $ Func (map show p) varargs b env
 
-makeNormalFunc :: [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeNormalFunc :: [LispVal] -> [LispVal] -> LispEval
 makeNormalFunc = makeFunc Nothing
 
-makeVarargs :: LispVal -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeVarargs :: LispVal -> [LispVal] -> [LispVal] -> LispEval
 makeVarargs = makeFunc . Just . show
 
 applyProc :: [LispVal] -> LispEval
