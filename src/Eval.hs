@@ -19,7 +19,7 @@ eval val@(Ratio _) = return val
 eval val@(Float _) = return val
 eval val@(Char _) = return val
 eval val@(Vector _) = return val
-eval (Atom i) = lift $ getVar i
+eval (Atom i) = getVar i
 eval (List [Atom "quote", val]) = return val
 eval e@(List [Atom "quasiquote", _]) = throwError $ BadSpecialForm "Quasiquotes not implemented" e
 eval e@(List [Atom "unquote", _]) = throwError $ BadSpecialForm "Unquotes not implemented" e
@@ -44,7 +44,7 @@ eval (List (Atom "case":key:clause:cs)) =
        case result of
             WrongClause -> throwError $ Unspecified "no matching case"
             _ -> return result
-eval (List [Atom "set!", Atom var, form]) = eval form >>= lift . setVar var
+eval (List [Atom "set!", Atom var, form]) = eval form >>= setVar var
 eval (List [Atom "string-set!", Atom var, i, ch]) =
     do i' <- eval i
        index <- liftThrows $ unpackNum i'
