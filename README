@@ -31,6 +31,7 @@ Interesting features, beyond those in write-yourself-a-scheme:
 =======
 To do:
 
+*: my set! routines don't overwrite values in the scope in which they're bound
 *: support immutable and mutable lisp values
 *: move set! family of functions into another list of EnvPrimitives
 *: add more tests, especially for the primitives
