@@ -30,7 +30,7 @@ eval (List [Atom "if", p, conseq, alt]) =
 eval (List [Atom "if", p, conseq]) =
     do result <- eval p
        case result of
-         Bool False -> throwError $ Unspecified "if without an else"
+         Bool False -> return Void --if without an else - no value
          _ -> eval conseq
 eval (List (Atom "cond":(clause:cs))) =
     foldl (chainEvalClause evalCondClause) (evalCondClause clause) cs

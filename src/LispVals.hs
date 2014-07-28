@@ -41,7 +41,8 @@ instance MonadError e m => MonadError e (ContT r m) where
   throwError = lift . throwError
   catchError op h = ContT $ \k -> catchError (runContT op k) (\e -> runContT (h e) k)
 
-data LispVal = Atom String
+data LispVal = Void
+        | Atom String
         | List [LispVal]
         | Vector (V.Vector LispVal)
         | DottedList [LispVal] LispVal
@@ -63,6 +64,7 @@ data LispVal = Atom String
 
 instance Show LispVal where show = showVal
 showVal :: LispVal -> String
+showVal Void = "<void>"
 showVal (Continuation _) = "<continuation>"
 showVal (String contents) = "\"" ++ unescapeString contents ++ "\""
 showVal (Atom name) = name
