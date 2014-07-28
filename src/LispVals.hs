@@ -60,13 +60,9 @@ data LispVal = Atom String
             { params :: [String]
             , vararg :: Maybe String
             , body :: [LispVal], closure :: Env}
-        | WrongClause -- this is a bit yuck, having to encode
-                      -- an eval-time error into LispVal since
-                      -- ContT can't be abstracted over it's return type
 
 instance Show LispVal where show = showVal
 showVal :: LispVal -> String
-showVal WrongClause = "<wrong clause>"
 showVal (Continuation _) = "<continuation>"
 showVal (String contents) = "\"" ++ unescapeString contents ++ "\""
 showVal (Atom name) = name
@@ -103,6 +99,7 @@ data LispError = NumArgs Integer [LispVal]
                | NotFunction String String
                | UnboundVar String String
                | Unspecified String
+               | WrongClause
                | Default String
 
 showError :: LispError -> String
@@ -115,6 +112,7 @@ showError (TypeMismatch expected found) = "Invalid type: expected " ++ expected
                                        ++ ", found " ++ show found
 showError (Parser parseErr) = "Parse error at " ++ show parseErr
 showError (Unspecified message) = "Unspecified operation: " ++ message
+showError (WrongClause) = "No matching clause"
 showError (Default message) = "Unknown error: " ++ message
 
 instance Show LispError where show = showError

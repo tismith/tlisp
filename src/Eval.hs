@@ -5,7 +5,7 @@ import LispEnvironment
 
 import Control.Monad.Trans (lift)
 import Control.Monad (liftM)
-import Control.Monad.Error (throwError)
+import Control.Monad.Error (throwError, catchError)
 import Control.Monad.Cont (callCC)
 import Data.Maybe (isNothing)
 
@@ -33,16 +33,10 @@ eval (List [Atom "if", p, conseq]) =
          Bool False -> throwError $ Unspecified "if without an else"
          _ -> eval conseq
 eval (List (Atom "cond":(clause:cs))) =
-    do result <- foldl (chainEvalClause evalCondClause) (evalCondClause clause) cs
-       case result of
-            WrongClause -> throwError $ Unspecified "no matching cond"
-            _ -> return result
+    foldl (chainEvalClause evalCondClause) (evalCondClause clause) cs
 eval (List (Atom "case":key:clause:cs)) =
     do evalKey <- eval key
-       result <- foldl (chainEvalClause (evalCaseClause evalKey)) (evalCaseClause evalKey clause) cs
-       case result of
-            WrongClause -> throwError $ Unspecified "no matching case"
-            _ -> return result
+       foldl (chainEvalClause (evalCaseClause evalKey)) (evalCaseClause evalKey clause) cs
 eval (List [Atom "set!", Atom var, form]) = eval form >>= setVar var
 eval (List [Atom "string-set!", Atom var, i, ch]) =
     do i' <- eval i
@@ -89,10 +83,10 @@ eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 chainEvalClause :: (LispVal -> LispEval) -> LispEval -> LispVal -> LispEval
 chainEvalClause evalFunc evalC unevalC = do
-                        clause <- evalC
-                        case clause of
-                            WrongClause -> evalFunc unevalC
-                            _ -> return clause
+    evalC `catchError` (\e ->
+        case e of
+            WrongClause -> evalFunc unevalC
+            _ -> throwError e)
 
 evalCaseClause :: LispVal -> LispVal -> LispEval
 evalCaseClause key (List (datums:(exprs@(_:_)))) = --exprs can't be []
@@ -105,7 +99,7 @@ evalCaseClause key (List (datums:(exprs@(_:_)))) = --exprs can't be []
                         then do
                             evalExprs <- mapM eval exprs
                             return $ last evalExprs
-                        else return WrongClause
+                        else throwError WrongClause
         e -> throwError $ TypeMismatch "list" e
 evalCaseClause _ badForm = throwError $ BadSpecialForm "Unrecognized case clause form" badForm
 
@@ -114,7 +108,7 @@ evalCondClause (List (test:[])) =
     do success <- eval test
        case success of
             Bool True -> return success
-            Bool False -> return WrongClause
+            Bool False -> throwError WrongClause
             _ -> throwError $ TypeMismatch "boolean" success
 evalCondClause (List (test:exprs)) =
     case test of
@@ -126,7 +120,7 @@ evalCondClause (List (test:exprs)) =
                     Bool True -> do
                         evalExprs <- mapM eval exprs
                         return $ last evalExprs
-                    Bool False -> return WrongClause
+                    Bool False -> throwError WrongClause
                     _ -> throwError $ TypeMismatch "boolean" success
 evalCondClause badForm = throwError $ BadSpecialForm "Unrecognized cond clause form" badForm
 
