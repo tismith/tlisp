@@ -21,7 +21,7 @@ main = do args <- getArgs
           if null args then runRepl else runOne args
 
 evalString :: Env -> String -> IO (String, Env)
-evalString env expr = runIOThrows (liftM show $ runEval (lift (liftThrows (readExpr expr)) >>= eval)) env
+evalString env expr = runIOThrows (liftM show $ runEval (readExpr expr >>= eval)) env
 
 evalAndPrint :: Env -> String -> IO Env
 evalAndPrint env expr = do

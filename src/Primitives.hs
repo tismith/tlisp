@@ -1,5 +1,4 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Primitives (
@@ -18,7 +17,6 @@ module Primitives (
     eqv
   ) where
 import LispVals
-import LispEnvironment
 import Parse
 
 import Control.Monad.Trans (liftIO, MonadIO)
@@ -484,7 +482,7 @@ closePort _ = return $ Bool False
 
 readProc :: (MonadError LispError m, MonadIO m) => [LispVal] -> m LispVal
 readProc [] = readProc [Port stdin]
-readProc [Port _] = liftIO getLine >>= liftThrows . readExpr
+readProc [Port _] = liftIO getLine >>= readExpr
 readProc [e] = throwError $ TypeMismatch "port" e
 readProc e = throwError $ NumArgs 1 e
 
@@ -505,4 +503,4 @@ readAll [e] = throwError $ TypeMismatch "string" e
 readAll e = throwError $ NumArgs 1 e
 
 load :: (MonadIO m, MonadError LispError m) => String -> m [LispVal]
-load filename = liftIO (readFile filename) >>= liftThrows . readExprList
+load filename = liftIO (readFile filename) >>= readExprList

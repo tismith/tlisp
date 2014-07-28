@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Parse (readExpr, readExprList) where
 import LispVals
@@ -28,7 +29,7 @@ import Numeric (readOct, readHex, readFloat)
 import Data.Char (digitToInt)
 import Data.Ratio ((%))
 import Data.Complex (Complex((:+)))
-import Control.Monad.Error (throwError)
+import Control.Monad.Error (MonadError, throwError)
 import qualified Data.Vector as V (fromList)
 
 -- $setup
@@ -386,13 +387,13 @@ parseExpr = parseString
     <|> parseBracketedParser parseList
     <|> parseBracketedParser parseDottedList
 
-readExpr :: String -> ThrowsError LispVal
+readExpr :: (MonadError LispError m) => String -> m LispVal
 readExpr = readOrThrow parseExpr
 
-readExprList :: String -> ThrowsError [LispVal]
+readExprList :: (MonadError LispError m) => String -> m [LispVal]
 readExprList = readOrThrow (endBy parseExpr spaces)
 
-readOrThrow :: Parser a -> String -> ThrowsError a
+readOrThrow :: (MonadError LispError m) => Parser a -> String -> m a
 readOrThrow parser input = case parse parser "lisp" input of
     Left err -> throwError $ Parser err
     Right val -> return val
