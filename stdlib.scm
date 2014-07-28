@@ -82,3 +82,9 @@
 (define (every? pred . lst) (apply and (map pred lst)))
 
 (define (string-length s)       (length (string->list s)))
+
+(define (for-each proc items)
+  (if (null? items)
+    #t
+    (if ((lambda (x) #t) (proc (car items)))
+      (for-each proc (cdr items)))))
