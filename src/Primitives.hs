@@ -2,31 +2,42 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Primitives (
-    ioPrimitives,
-    primitives,
-    unpackNum,
-    unpackFloat,
-    unpackRatio,
-    unpackComplex,
-    unpackChar,
-    unpackStr,
-    unpackCoerceStr,
-    unpackBool,
-    --these two are bit yucky to have exported
-    load,
-    eqv
+    primitiveBindings
   ) where
 import LispVals
+import LispEnvironment
 import Parse
+import Eval
 
 import Control.Monad.Trans (liftIO, MonadIO)
 import Control.Monad (liftM, foldM, zipWithM)
 import Control.Monad.Error (throwError, catchError, MonadError)
+import Control.Monad.Cont (MonadCont, callCC)
 import Data.Ratio (Ratio, (%))
 import Data.Complex (Complex((:+)))
 import Data.Char (toLower)
 import System.IO (IOMode(ReadMode, WriteMode), hPrint, hClose, openFile, stdin, stdout)
 import Data.Function (on)
+
+primitiveBindings :: Env
+primitiveBindings = envFromList (
+        map (makeF IOFunc) ioPrimitives ++
+        map (makeF PrimitiveFunc) primitives ++
+        map (makeF SpecialFormFunc) specialFormPrimitives)
+    where makeF constructor (var, func) = (var, constructor func)
+
+specialFormPrimitives :: [(String, [LispVal] -> LispEval)]
+specialFormPrimitives = [("if", ifProc),
+                         ("case", caseProc),
+                         ("cond", condProc),
+                         ("set!", setProc),
+                         ("string-set!", stringSetProc),
+                         ("string-fill!", stringFillProc),
+                         ("define", defineProc),
+                         ("call-with-current-continuation", callCCProc),
+                         ("lambda", lambdaProc),
+                         ("load", loadProc),
+                         ("apply", applyProc)]
 
 ioPrimitives :: (MonadError LispError m, MonadIO m) => [(String, [LispVal] -> m LispVal)]
 ioPrimitives = [("open-input-file", makePort ReadMode),
@@ -504,3 +515,145 @@ readAll e = throwError $ NumArgs 1 e
 
 load :: (MonadIO m, MonadError LispError m) => String -> m [LispVal]
 load filename = liftIO (readFile filename) >>= readExprList
+
+ifProc :: [LispVal] -> LispEval
+ifProc [p, conseq, alt] =
+    do result <- eval p
+       case result of
+         Bool False -> eval alt
+         _ -> eval conseq
+ifProc [p, conseq] =
+    do result <- eval p
+       case result of
+         Bool False -> return Void --if without an else - no value
+         _ -> eval conseq
+ifProc e = throwError $ NumArgs 2 e
+
+condProc :: [LispVal] -> LispEval
+condProc (clause:cs) =
+    foldl (chainEvalClause evalCondClause) (evalCondClause clause) cs
+condProc e = throwError $ NumArgs 1 e
+caseProc :: [LispVal] -> LispEval
+caseProc (key:clause:cs) =
+    do evalKey <- eval key
+       foldl (chainEvalClause (evalCaseClause evalKey)) (evalCaseClause evalKey clause) cs
+caseProc e = throwError $ NumArgs 2 e
+
+chainEvalClause :: (LispVal -> LispEval) -> LispEval -> LispVal -> LispEval
+chainEvalClause evalFunc evalC unevalC =
+    evalC `catchError` (\e ->
+        case e of
+            WrongClause -> evalFunc unevalC
+            _ -> throwError e)
+
+evalCaseClause :: LispVal -> LispVal -> LispEval
+evalCaseClause key (List (datums:(exprs@(_:_)))) = --exprs can't be []
+    case datums of
+        Atom "else" -> do
+                evalExprs <- mapM eval exprs
+                return $ last evalExprs
+        List l -> do success <- liftM or $ mapM (\x -> eqv [x, key] >>= unpackBool) l
+                     if success
+                        then do
+                            evalExprs <- mapM eval exprs
+                            return $ last evalExprs
+                        else throwError WrongClause
+        e -> throwError $ TypeMismatch "list" e
+evalCaseClause _ badForm = throwError $ BadSpecialForm "Unrecognized case clause form" badForm
+
+evalCondClause :: LispVal -> LispEval
+evalCondClause (List (test:[])) =
+    do success <- eval test
+       case success of
+            Bool True -> return success
+            Bool False -> throwError WrongClause
+            _ -> throwError $ TypeMismatch "boolean" success
+evalCondClause (List (test:exprs)) =
+    case test of
+        Atom "else" -> do
+            evalExprs <- mapM eval exprs
+            return $ last evalExprs
+        _ -> do success <- eval test
+                case success of
+                    Bool True -> do
+                        evalExprs <- mapM eval exprs
+                        return $ last evalExprs
+                    Bool False -> throwError WrongClause
+                    _ -> throwError $ TypeMismatch "boolean" success
+evalCondClause badForm = throwError $ BadSpecialForm "Unrecognized cond clause form" badForm
+
+setProc :: [LispVal] -> LispEval
+setProc [Atom var, form] = eval form >>= setVar var
+setProc e = throwError $ NumArgs 2 e
+
+stringSetProc :: [LispVal] -> LispEval
+stringSetProc [Atom var, i, ch] =
+    do i' <- eval i
+       index <- unpackNum i'
+       ch' <- eval ch
+       char <- unpackChar ch'
+       v <- getVar var
+       str <- unpackStr v
+       let (f,s) = splitAt (fromIntegral index) str
+       case s of
+            [] -> throwError $ Unspecified "invalid index"
+            _ -> setVar var (String $ f ++ [char] ++ drop 1 s)
+stringSetProc e = throwError $ NumArgs 3 e
+
+stringFillProc :: [LispVal] -> LispEval
+stringFillProc [Atom var, ch] =
+    do v <- getVar var
+       ch' <- eval ch
+       char <- unpackChar ch'
+       str <- unpackStr v
+       setVar var (String $ map (const char) str)
+stringFillProc e = throwError $ NumArgs 2 e
+
+defineProc :: [LispVal] -> LispEval
+defineProc [Atom var, form] = eval form >>= defineVar var
+defineProc (List (Atom var : p) : b) =
+    makeNormalFunc p b >>= defineVar var
+defineProc (DottedList (Atom var : p) varargs : b) =
+    makeVarargs varargs p b >>= defineVar var
+defineProc e = throwError $ NumArgs 2 e
+
+callCCProc :: [LispVal] -> LispEval
+callCCProc [proc] =
+    callCC $ \cont -> do
+        f <- eval proc
+        applyProc' [f, Continuation cont]
+callCCProc e = throwError $ NumArgs 1 e
+
+lambdaProc :: [LispVal] -> LispEval
+lambdaProc (List p : b) = makeNormalFunc p b
+lambdaProc (DottedList p varargs : b) =
+    makeVarargs varargs p b
+lambdaProc (varargs@(Atom _) : b) =
+    makeVarargs varargs [] b
+lambdaProc e = throwError $ NumArgs 2 e
+
+makeFunc :: Maybe String -> [LispVal] -> [LispVal] -> LispEval
+makeFunc varargs p b = do
+    env <- getEnv
+    return $ Func (map show p) varargs b env
+
+makeNormalFunc :: [LispVal] -> [LispVal] -> LispEval
+makeNormalFunc = makeFunc Nothing
+
+makeVarargs :: LispVal -> [LispVal] -> [LispVal] -> LispEval
+makeVarargs = makeFunc . Just . show
+
+loadProc :: [LispVal] -> LispEval
+loadProc [String filename] =
+    load filename >>= liftM last . mapM eval
+loadProc e = throwError $ NumArgs 1 e
+
+applyProc :: [LispVal] -> LispEval
+applyProc args = do
+    argVals <- mapM eval args
+    applyProc' argVals
+
+applyProc' :: [LispVal] -> LispEval
+applyProc' [func, List args] = apply func args
+applyProc' (func : args) = apply func args
+applyProc' e = throwError $ NumArgs 2 e

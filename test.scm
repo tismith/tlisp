@@ -2,8 +2,10 @@
 
 (write "test cases")
 
+(define call/CC call-with-current-continuation)
+
 (define (search wanted? lst)
-  (call-with-current-continuation
+  (call/CC
     (lambda (return)
       (for-each (lambda (element)
 		  (if (wanted? element)

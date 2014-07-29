@@ -89,6 +89,3 @@ replLoop = do
                     _ -> lift get >>= \e -> liftIO (evalAndPrint e trimmedLine) >>= lift . put >> replLoop
             else replLoop
 
-primitiveBindings :: Env
-primitiveBindings = envFromList (map (mF IOFunc) ioPrimitives ++ map (mF PrimitiveFunc) primitives)
-    where mF constructor (var, func) = (var, constructor func)
