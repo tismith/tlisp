@@ -33,20 +33,19 @@ apply (Continuation _) e = throwError $ NumArgs 1 e
 apply (IOFunc func) args = mapM eval args >>= lift . func
 apply (PrimitiveFunc func) args = mapM eval args >>= liftThrows . func
 apply (Func ps varargs b c) args = do
+    env <- getEnv
+    putEnv (newFrame env)
     evalArgs <- mapM eval args
-    originalEnv <- getEnv
     let remainingArgs = drop (length ps) evalArgs
     if num ps /= num evalArgs && isNothing varargs
        then throwError $ NumArgs (num ps) evalArgs
        else do
-        -- this is not a nice way to handle a stack frame, just splatting over
-        -- the top
         bindVars $ envToList c
         bindVars $ zip ps evalArgs
         bindVarArgs varargs remainingArgs
         r <- evalBody
-        -- and then manually unwinding it
-        putEnv originalEnv
+        newEnv <- getEnv
+        putEnv (dropFrame newEnv)
         return r
     where num = toInteger . length
           evalBody = liftM last $ mapM eval b

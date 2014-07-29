@@ -23,5 +23,6 @@
     (case (+ 1 (call-with-current-continuation
 		 (lambda (cont)
 		   (set! contfunc cont)
-		   1))) ((2) #t) (else #f))))
+		   1))) ((2) #t) (else #f))
+    (= (contfunc 22) 23)))
 
