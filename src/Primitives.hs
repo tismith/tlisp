@@ -532,11 +532,17 @@ ifProc e = throwError $ NumArgs 2 e
 condProc :: [LispVal] -> LispEval
 condProc (clause:cs) =
     foldl (chainEvalClause evalCondClause) (evalCondClause clause) cs
+        `catchError` (\e -> case e of
+            WrongClause -> return Void -- no matching cond - no value
+            _ -> throwError e)
 condProc e = throwError $ NumArgs 1 e
 caseProc :: [LispVal] -> LispEval
-caseProc (key:clause:cs) =
-    do evalKey <- eval key
-       foldl (chainEvalClause (evalCaseClause evalKey)) (evalCaseClause evalKey clause) cs
+caseProc (key:clause:cs) = do
+    evalKey <- eval key
+    foldl (chainEvalClause (evalCaseClause evalKey)) (evalCaseClause evalKey clause) cs
+        `catchError` (\e -> case e of
+            WrongClause -> return Void -- no matching case - no value
+            _ -> throwError e)
 caseProc e = throwError $ NumArgs 2 e
 
 chainEvalClause :: (LispVal -> LispEval) -> LispEval -> LispVal -> LispEval
