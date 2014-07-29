@@ -22,8 +22,9 @@ import Control.Monad.State (State, StateT)
 import Control.Monad.Cont (ContT(..), runContT)
 import Control.Monad.Trans (lift)
 import System.IO (Handle)
+import Data.IORef (IORef)
 
-type Env = [M.Map String LispVal]
+type Env = [IORef (M.Map String LispVal)]
 type ThrowsError = Either LispError
 -- ErrorT e m a ~ m (Either e a)
 -- State s a ~ s -> (a, s)
