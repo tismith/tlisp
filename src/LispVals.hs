@@ -57,6 +57,7 @@ data LispVal = Void
         | Continuation (LispVal -> LispEval)
         | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
         | IOFunc ([LispVal] -> IOThrowsError LispVal)
+        | SpecialFormFunc ([LispVal] -> LispEval)
         | Func
             { params :: [String]
             , vararg :: Maybe String
@@ -87,6 +88,7 @@ showVal (Complex (r :+ i))
 showVal (Ratio contents) = show (numerator contents) ++ "/" ++ show (denominator contents)
 showVal (Port _) = "<port>"
 showVal (PrimitiveFunc _) = "<primitive>"
+showVal (SpecialFormFunc _) = "<special form primitive>"
 showVal (IOFunc _) = "<io primitive>"
 showVal (Func {params = args, vararg = varargs}) =
   "(lambda (" ++ unwords (map show args) ++
