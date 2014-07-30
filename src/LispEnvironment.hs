@@ -1,7 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 module LispEnvironment (
     envSymbols,
-    envFromList,
+    frameFromList,
+    initEnv,
     envToList,
     liftThrows,
     liftEnvThrows,
@@ -13,32 +14,41 @@ module LispEnvironment (
     defineVar,
     setVar,
     bindVars,
-    newFrame,
+    addNewFrame,
     dropFrame
   ) where
 
 import LispVals
 
-import Control.Applicative ((<$>), (<*>))
+import Control.Monad (liftM)
+import Control.Monad.Trans (MonadIO, liftIO)
 import Control.Monad.State (get, put, runState, runStateT, MonadState)
 import Control.Monad.Error (ErrorT, runErrorT, throwError, MonadError, catchError)
 import Control.Monad.Cont (runContT)
-import qualified Data.Map as M (lookup, insert, fromList, union, toList, keys, unions, singleton, empty)
+import Data.IORef (newIORef, readIORef, modifyIORef')
+import qualified Data.Map.Strict as M (lookup, insert, fromList, union, toList, keys, unions, singleton, empty)
 
-newFrame :: Env -> Env
-newFrame envs = M.empty : envs
+addNewFrame :: Env -> IO Env
+addNewFrame envs = do
+    newFrame <- newIORef M.empty
+    return $ newFrame:envs
 
 dropFrame :: Env -> Env
 dropFrame = drop 1
 
-envSymbols :: Env -> [String]
-envSymbols = M.keys . M.unions
+envSymbols :: Env -> IO [String]
+envSymbols = liftM (M.keys . M.unions) . mapM readIORef
 
-envFromList :: [(String, LispVal)] -> Env
-envFromList l = [M.fromList l]
+frameFromList :: [(String, LispVal)] -> Frame
+frameFromList = M.fromList
 
-envToList :: Env -> [(String, LispVal)]
-envToList = M.toList . M.unions
+initEnv :: Frame -> IO Env
+initEnv frame = do
+    ioFrame <- newIORef frame
+    return [ioFrame]
+
+envToList :: Env -> IO [(String, LispVal)]
+envToList = liftM (M.toList . M.unions) . mapM readIORef
 
 liftEnvThrows :: (MonadError LispError m, MonadState Env m) => EnvThrowsError a -> m a
 liftEnvThrows action = do
@@ -72,35 +82,40 @@ getEnv = get
 putEnv :: MonadState Env m => Env -> m ()
 putEnv = put
 
-getVar :: (MonadState Env m, MonadError LispError m) => String -> m LispVal
-getVar var = get >>= maybe (throwError $ UnboundVar "Getting an unbound variable" var) return . M.lookup var . M.unions
+getVar :: (MonadState Env m, MonadIO m, MonadError LispError m) => String -> m LispVal
+getVar var = do
+    envs <- get
+    maybeVar <- liftM (M.lookup var . M.unions) . liftIO . mapM readIORef $ envs
+    maybe (throwError $ UnboundVar "Getting an unbound variable" var) return
+        maybeVar
 
-setVar :: (MonadState Env m, MonadError LispError m) => String -> LispVal -> m LispVal
+setVar :: (MonadState Env m, MonadIO m, MonadError LispError m) => String -> LispVal -> m LispVal
 setVar var value = do
     envs <- get
-    case setVar' envs of
-        Nothing -> throwError $ UnboundVar "Setting an unbound variable" var
-        Just e -> put e
+    setVar' var value envs
     return Void
-    where setVar' envs = case envs of
-                        [] -> Nothing
-                        (e:es) -> maybe ((:) <$> Just e <*> setVar' es)
-                                        (const $ Just (M.insert var value e:es))
-                                        (M.lookup var e)
 
-defineVar :: (MonadState Env m) => String -> LispVal -> m LispVal
+setVar' :: (MonadState Env m, MonadIO m, MonadError LispError m) => String -> LispVal -> Env -> m ()
+setVar' var _ [] = throwError $ UnboundVar "Setting an unbown variable" var
+setVar' var value (e:es) = do
+    frame <- liftIO $ readIORef e
+    case M.lookup var frame of
+        Nothing -> setVar' var value es
+        Just _ -> liftIO $ modifyIORef' e (M.insert var value)
+
+defineVar :: (MonadState Env m, MonadIO m) => String -> LispVal -> m LispVal
 defineVar var value = do
     envs <- get
     case envs of
-        [] -> put [M.singleton var value]
-        (e:es) -> put (M.insert var value e:es)
+        [] -> liftIO (newIORef (M.singleton var value)) >>= put . (:[])
+        (e:_) -> liftIO $ modifyIORef' e (M.insert var value)
     return value
 
-bindVars :: (MonadState Env m) => [(String, LispVal)] -> m ()
+bindVars :: (MonadState Env m, MonadIO m) => [(String, LispVal)] -> m ()
 bindVars bindings = do
     envs <- get
     case envs of
-        [] -> put $ envFromList bindings
-        (e:es) -> put ((M.fromList bindings `M.union` e):es)
+        [] -> liftIO (newIORef $ frameFromList bindings) >>= put . (:[])
+        (e:_) -> liftIO $ modifyIORef' e (M.union (M.fromList bindings))
     return ()
 

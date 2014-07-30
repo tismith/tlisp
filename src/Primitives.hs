@@ -19,8 +19,8 @@ import Data.Char (toLower)
 import System.IO (IOMode(ReadMode, WriteMode), hPrint, hClose, openFile, stdin, stdout)
 import Data.Function (on)
 
-primitiveBindings :: Env
-primitiveBindings = envFromList (
+primitiveBindings :: Frame
+primitiveBindings = frameFromList (
         map (makeF IOFunc) ioPrimitives ++
         map (makeF PrimitiveFunc) primitives ++
         map (makeF SpecialFormFunc) specialFormPrimitives)

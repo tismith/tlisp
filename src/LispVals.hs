@@ -3,6 +3,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module LispVals (
+    Frame,
     Env,
     ThrowsError,
     EnvThrowsError,
@@ -15,7 +16,7 @@ module LispVals (
 import Data.Ratio (Ratio, numerator, denominator)
 import Data.Complex (Complex((:+)))
 import qualified Data.Vector as V (toList, Vector)
-import qualified Data.Map as M (Map)
+import qualified Data.Map.Strict as M (Map)
 import Text.ParserCombinators.Parsec (ParseError)
 import Control.Monad.Error (ErrorT, Error, noMsg, strMsg, MonadError, throwError, catchError)
 import Control.Monad.State (State, StateT)
@@ -24,7 +25,8 @@ import Control.Monad.Trans (lift)
 import System.IO (Handle)
 import Data.IORef (IORef)
 
-type Env = [IORef (M.Map String LispVal)]
+type Frame = M.Map String LispVal
+type Env = [IORef Frame]
 type ThrowsError = Either LispError
 -- ErrorT e m a ~ m (Either e a)
 -- State s a ~ s -> (a, s)

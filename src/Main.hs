@@ -31,13 +31,14 @@ evalAndPrint env expr = do
 
 runOne :: [String] -> IO ()
 runOne args = do
+    newEnv <- initEnv primitiveBindings
     (out, _) <- runIOThrows (liftM show $ runEval
             (bindVars [("args", List $ map String $ drop 1 args)] >> eval (List [Atom "load", String (head args)])))
-        primitiveBindings
+            newEnv
     hPutStrLn stderr out
 
 runRepl :: IO ()
-runRepl = evalStateT (runInputT (setComplete replComplete defaultSettings) replLoop) primitiveBindings
+runRepl = initEnv primitiveBindings >>= evalStateT (runInputT (setComplete replComplete defaultSettings) replLoop)
 
 replComplete :: CompletionFunc (StateT Env IO)
 replComplete = completeQuotedWord Nothing "\"\'" (const $ return []) symbolComplete
@@ -48,7 +49,7 @@ symbolComplete = completeWord Nothing "() \t" completeEnv
 completeEnv :: String -> (StateT Env IO) [Completion]
 completeEnv s = do
     env <- get
-    let keys = envSymbols env
+    keys <- liftIO $ envSymbols env
     return $ map simpleCompletion $ filter (isPrefixOf s) keys
 
 doQuit :: IO Bool
@@ -61,7 +62,7 @@ showBinding :: (String, LispVal) -> String
 showBinding (s,l) = s ++ " -> " ++ show l
 
 doEnv :: Env -> IO ()
-doEnv e = putStrLn $ unlines $ map showBinding $ envToList e
+doEnv e = envToList e >>= putStrLn . unlines . map showBinding
 
 handleCommand :: Env -> String -> IO Bool
 handleCommand e s = case s of

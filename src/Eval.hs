@@ -2,7 +2,7 @@ module Eval (eval, apply) where
 import LispVals
 import LispEnvironment
 
-import Control.Monad.Trans (lift)
+import Control.Monad.Trans (lift, liftIO)
 import Control.Monad (liftM)
 import Control.Monad.Error (throwError)
 import Data.Maybe (isNothing)
@@ -34,18 +34,19 @@ apply (IOFunc func) args = mapM eval args >>= lift . func
 apply (PrimitiveFunc func) args = mapM eval args >>= liftThrows . func
 apply (Func ps varargs b c) args = do
     env <- getEnv
-    putEnv (newFrame env)
     evalArgs <- mapM eval args
     let remainingArgs = drop (length ps) evalArgs
     if num ps /= num evalArgs && isNothing varargs
        then throwError $ NumArgs (num ps) evalArgs
        else do
-        bindVars $ envToList c
+        --make a new frame for args, on top of the closure
+        newEnv <- liftIO $ addNewFrame c
+        putEnv newEnv
         bindVars $ zip ps evalArgs
         bindVarArgs varargs remainingArgs
         r <- evalBody
-        newEnv <- getEnv
-        putEnv (dropFrame newEnv)
+        --restore old env
+        putEnv env
         return r
     where num = toInteger . length
           evalBody = liftM last $ mapM eval b

@@ -14,6 +14,10 @@
 	lst)
       #f)))
 
+(define (f return)
+    (return 2)
+      3)
+
 (define contfunc #f)
 (write
   (and
@@ -24,5 +28,8 @@
 		 (lambda (cont)
 		   (set! contfunc cont)
 		   1))) ((2) #t) (else #f))
-    (= (contfunc 22) 23)))
+    (= 3 (f (lambda (x) x)))
+    (= (call-with-current-continuation f) 2)
+    ))
+
 
