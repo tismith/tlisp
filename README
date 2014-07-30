@@ -21,26 +21,21 @@ tlisp>>> (map (curry + 2) ’(1 2 3 4))
 =======
 Interesting features, beyond those in write-yourself-a-scheme:
 
-*: uses StateT to hold the environment instead of using IORefs
 *: uses ContT to implement call-with-current-continuation
 *: native support for integers, rationals, floating point and complex numbers
 *: arithmetic operations perform type promotion between the numerical types
 *: uses haskeline for command history and tab-completion in the repl
 *: has doctest tests for the parser
+*: models the environment using StateT [IORef (Data.Map String LispVal)]
 
 =======
 To do:
 
-*: my set! routines don't overwrite values in the scope in which they're bound
 *: support immutable and mutable lisp values
-*: move set! family of functions into another list of EnvPrimitives
 *: add more tests, especially for the primitives
 *: add eval support for quasiquotes and unquotes
-
-=======
-Ambitions:
-
 *: add macros
+*: integrate test.scm into the tests (currently you just run it and look for #t as the output)
 
 =======
 To run the tests:
